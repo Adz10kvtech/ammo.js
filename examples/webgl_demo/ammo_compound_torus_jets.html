@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+    <head>
+      <title>Ammo.js Compound Torus Demo</title>
+      <script src="CubicVR.min.js" type="text/javascript"></script>
+      <style type="text/css">
+        body {
+          background-color: #ccc;
+          text-size-adjust: none;
+        }
+      </style>
+
+      <script type="text/javascript">
+        // Main demo code
+        var toruses = [];
+        var pegs = [];
+        var smallBalls = [];
+
+        var lastFPS = 0;
+        var outElement = null;
+        var currFPS = 0, allFPS = 0;
+        function showFPS() {
+          if (!outElement) outElement = document.getElementById('out');
+          var now = Date.now();
+          if (now - lastFPS > 333) {
+            outElement.value = currFPS + ' / ' + allFPS;
+            lastFPS = now;
+          }
+        }
+
+        var FLOOR_SIZE = 100;
+        var FLOOR_HEIGHT = -56;
+        var TORUS_RADIUS = 1.0;      // Major radius of the torus
+        var TUBE_RADIUS = 0.3;       // Minor radius of the torus
+        var TORUS_SEGMENTS = 16;     // Number of segments around the major radius
+        var TUBE_SEGMENTS = 12;      // Number of segments around the minor radius
+
+        var physicsWorker = null;
+
+        // CubicVR code
+        function startUp(NUM) {
+          var NUMRANGE = [];
+          while (NUMRANGE.length < NUM) NUMRANGE.push(NUMRANGE.length+1);
+
+          document.getElementById('postdiv').innerHTML = '(' + NUM + ' toruses)';
+          document.getElementById('during').style.visibility = 'visible';
+
+          var canvas = document.getElementById("canvas");
+          canvas.width = screen.width*0.75;
+          canvas.height = screen.height*0.50;
+
+          var gl = CubicVR.init(canvas);
+
+          if (!gl) {
+            alert("Sorry, no WebGL support :(");
+            return;
+          };
+
+          var quaternion = new CubicVR.Quaternion;
+
+          var scene = new CubicVR.Scene(canvas.width, canvas.height, 70);
+
+          var light = new CubicVR.Light({
+            type: CubicVR.enums.light.type.POINT,
+            intensity: 0.9,
+            areaCeiling: 80,
+            areaFloor: FLOOR_HEIGHT,
+            areaAxis: [15, 10],
+            distance: 60,
+            mapRes: 1024
+          });
+          scene.bindLight(light);
+
+          scene.camera.position = [0, 5, 25];
+          scene.camera.target = [0, 0, 0];
+
+          var torusMaterials = [];
+          var torusMeshes = [];
+
+          // Create torus materials with different colors
+          var colors = [
+            [1.0, 0.2, 0.2],  // Red
+            [0.2, 1.0, 0.2],  // Green
+            [0.2, 0.2, 1.0],  // Blue
+            [1.0, 1.0, 0.2],  // Yellow
+            [1.0, 0.2, 1.0]   // Purple
+          ];
+
+          for (var i = 0; i < 5; i++) {
+            torusMaterials[i] = new CubicVR.Material({
+              color: colors[i]
+            });
+            
+            torusMeshes[i] = new CubicVR.primitives.torus({
+              majorRadius: TORUS_RADIUS,
+              minorRadius: TUBE_RADIUS,
+              segmentsR: TORUS_SEGMENTS,
+              segmentsT: TUBE_SEGMENTS,
+              material: torusMaterials[i]
+            }).calcNormals().triangulateQuads().compile().clean();
+          }
+
+          // Create toruses
+          for (var i = 0; i < NUM; i++) {
+            toruses[i] = new CubicVR.SceneObject({ 
+              mesh: torusMeshes[Math.floor(Math.random()*5)], 
+              position: [0, -10000, 0] 
+            });
+            scene.bindSceneObject(toruses[i], true);
+          }
+
+          // Create pegs (vertical cylinders)
+          var pegMaterial = new CubicVR.Material({
+            color: [0.6, 0.6, 0.6]  // Gray pegs
+          });
+          
+          var pegMesh = new CubicVR.primitives.cylinder({
+            radius: 0.15,
+            height: 8.0,
+            material: pegMaterial
+          }).calcNormals().triangulateQuads().compile().clean();
+
+          // Create 5 pegs in a row
+          for (var i = 0; i < 5; i++) {
+            var x = (i - 2) * 4;  // Space them out
+            pegs[i] = new CubicVR.SceneObject({ 
+              mesh: pegMesh, 
+              position: [x, 0, 0]  // Centered at z=0
+            });
+            scene.bindSceneObject(pegs[i], true);
+          }
+          
+          // Create small balls that can pass through the holes
+          var ballMaterial = new CubicVR.Material({
+            color: [1.0, 0.7, 0.0]  // Orange balls
+          });
+          
+          var ballMesh = new CubicVR.primitives.sphere({
+            radius: TORUS_RADIUS * 0.4,  // Smaller than the torus hole
+            material: ballMaterial,
+            segments: 12
+          }).calcNormals().compile().clean();
+          
+          // Create 10 small balls
+          for (var i = 0; i < 10; i++) {
+            smallBalls[i] = new CubicVR.SceneObject({ 
+              mesh: ballMesh, 
+              position: [0, -10000, 0] 
+            });
+            scene.bindSceneObject(smallBalls[i], true);
+          }
+
+          // Create floor
+          var floorMaterial = new CubicVR.Material({
+            color: [0.8, 0.8, 0.8]  // Gray floor
+          });
+          
+          var floorMesh = new CubicVR.primitives.box({
+            size: FLOOR_SIZE,
+            material: floorMaterial,
+            uvmapper: {
+                projectionMode: CubicVR.enums.uv.projection.CUBIC,
+                scale: [4, 4, 4]
+            }
+          }).calcNormals().triangulateQuads().compile().clean();
+
+          var floor_ = new CubicVR.SceneObject({ mesh: floorMesh, position: [0, FLOOR_HEIGHT, 0] });
+          scene.bindSceneObject(floor_, true);
+
+          // Worker
+          if (physicsWorker) physicsWorker.terminate();
+          physicsWorker = new Worker('worker_compound_torus.js');
+
+          physicsWorker.onmessage = function(event) {
+            var data = event.data;
+            if (data.isReady){
+              physicsWorker.postMessage({
+                num: NUM,
+                torusRadius: TORUS_RADIUS,
+                tubeRadius: TUBE_RADIUS
+              });
+              return;  
+            }
+            
+            // Update toruses
+            if (data.objects && data.objects.length == NUM) {
+              for (var i = 0; i < NUM; i++) {
+                var physicsObject = data.objects[i];
+                var renderObject = toruses[i];
+                renderObject.position[0] = physicsObject[0];
+                renderObject.position[1] = physicsObject[1];
+                renderObject.position[2] = physicsObject[2];
+                quaternion.x = physicsObject[3];
+                quaternion.y = physicsObject[4];
+                quaternion.z = physicsObject[5];
+                quaternion.w = physicsObject[6];
+                renderObject.rotation = quaternion.toEuler();
+              }
+            }
+            
+            // Update pegs
+            if (data.pegs) {
+              for (var i = 0; i < data.pegs.length; i++) {
+                var physicsObject = data.pegs[i];
+                var renderObject = pegs[i];
+                renderObject.position[0] = physicsObject[0];
+                renderObject.position[1] = physicsObject[1];
+                renderObject.position[2] = physicsObject[2];
+                quaternion.x = physicsObject[3];
+                quaternion.y = physicsObject[4];
+                quaternion.z = physicsObject[5];
+                quaternion.w = physicsObject[6];
+                renderObject.rotation = quaternion.toEuler();
+              }
+            }
+            
+            // Update small balls
+            if (data.balls) {
+              for (var i = 0; i < data.balls.length; i++) {
+                var physicsObject = data.balls[i];
+                var renderObject = smallBalls[i];
+                renderObject.position[0] = physicsObject[0];
+                renderObject.position[1] = physicsObject[1];
+                renderObject.position[2] = physicsObject[2];
+                quaternion.x = physicsObject[3];
+                quaternion.y = physicsObject[4];
+                quaternion.z = physicsObject[5];
+                quaternion.w = physicsObject[6];
+                renderObject.rotation = quaternion.toEuler();
+              }
+            }
+            
+            currFPS = data.currFPS;
+            allFPS = data.allFPS;
+          };
+
+          // Main loop
+          var mvc = new CubicVR.MouseViewController(canvas, scene.camera);
+
+          CubicVR.MainLoop(function(timer, gl) {
+            var dt = timer.getLastUpdateSeconds();
+            scene.render();
+            showFPS();
+          });
+        }
+      </script>
+    </head>
+    <body onload="document.getElementById('during').style.visibility = 'hidden'">
+      <center>
+        <h2>Ammo.js Compound Torus Demo</h2>
+        <p>This demo shows toruses with real holes that objects can pass through!</p>
+
+        <canvas id="canvas" width="1" height="1"></canvas>
+        <br>
+        <br>
+        <div id="before">
+          <form>
+            Toruses:
+            <select name="boxes">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="30">30</option>
+              <option value="50">50</option>
+            </select>
+            <input type="button" value="Start Demo!" onclick="startUp(boxes.value);">
+          </form>
+        </div>
+        <div id="during">
+          <div>Physics FPS (current / stable): <input type="text" id="out" readonly="1" size="7"></div>
+          <div id="postdiv"></div>
+        </div>
+        <p>
+        This demo shows compound toruses with real holes. The orange balls are small enough to pass through 
+        the holes, while the toruses can slide down the vertical pegs.
+        </p>
+        <p>
+        Built with <b><a href="https://github.com/kripken/ammo.js">ammo.js</a></b>, a port of
+        the <b><a href="http://www.bulletphysics.com">Bullet physics engine</a></b> using 
+        <b><a href="http://emscripten.org">Emscripten</a></b>. Rendering with
+        <b><a href="https://github.com/cjcliffe/CubicVR.js/">CubicVR.js</a></b>.
+        </p>
+      </center>
+    </body>
+</html> 

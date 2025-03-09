@@ -22,7 +22,7 @@ Ammo().then(function(Ammo) {
   var bodies = [];
   var pegs = [];
   var smallBalls = []; // Small objects that can pass through holes
-
+  
   // Set up ground
   var groundTransform = new Ammo.btTransform();
   groundTransform.setIdentity();
@@ -293,7 +293,7 @@ Ammo().then(function(Ammo) {
     dt = dt || 1;
 
     dynamicsWorld.stepSimulation(dt, 2);
-
+    
     var alpha;
     if (meanDt > 0) {
       alpha = Math.min(0.1, dt/1000);
