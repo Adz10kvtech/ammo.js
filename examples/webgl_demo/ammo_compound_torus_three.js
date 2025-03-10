@@ -76,10 +76,10 @@ function initGraphics() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xbfd1e5);
     
-    // Create camera
+    // Create camera with adjusted position to see the tank and slope on the floor
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.2, 2000);
-    camera.position.set(0, 5, 25);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(0, -FLOOR_HEIGHT/4, 40); // Lower camera position for better view
+    camera.lookAt(0, FLOOR_HEIGHT + 10, -10); // Look at the area where tank and slope sit on the floor
     
     // Create renderer with performance optimizations
     renderer = new THREE.WebGLRenderer({ 
@@ -93,7 +93,7 @@ function initGraphics() {
     // Add orbit controls with damping disabled for better performance
     controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = false;
-    controls.target.set(0, 0, 0);
+    controls.target.set(0, FLOOR_HEIGHT + 10, -10); // Update orbit controls target to match lookAt
     controls.update();
     
     // Add lighting - simplified for better performance
@@ -148,6 +148,7 @@ function createSharedResources(Ammo) {
 
 function createObjects(Ammo, torusCount) {
     createFloor(Ammo);
+    createSlope(Ammo);
     createTank(Ammo);
     createPegs(Ammo);
     createToruses(Ammo, torusCount);
@@ -175,26 +176,127 @@ function createFloor(Ammo) {
     createRigidBody(Ammo, floorMesh, floorShape, mass, floorTransform);
 }
 
+function createSlope(Ammo) {
+    // Slope dimensions
+    const slopeWidth = 40;
+    const slopeLength = 30;
+
+    const slopeAngle = Math.PI * 0.08; // About 15 degrees
+    
+    // Create visual slope
+    const slopeGeometry = new THREE.BoxGeometry(slopeWidth, 2, slopeLength);
+    const slopeMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x996633,  // Brown color
+        shininess: 1
+    });
+    const slopeMesh = new THREE.Mesh(slopeGeometry, slopeMaterial);
+    
+    // Position and rotate the slope
+    slopeMesh.position.set(0, FLOOR_HEIGHT + 1, -40); // Position directly on the floor
+    slopeMesh.rotation.x = slopeAngle;
+    
+    scene.add(slopeMesh);
+    
+    // Create physics body for the slope
+    // We'll use a box shape rotated to match the visual slope
+    const slopeShape = new Ammo.btBoxShape(new Ammo.btVector3(slopeWidth / 2, 1, slopeLength / 2));
+    
+    const slopeTransform = new Ammo.btTransform();
+    slopeTransform.setIdentity();
+    slopeTransform.setOrigin(new Ammo.btVector3(slopeMesh.position.x, slopeMesh.position.y, slopeMesh.position.z));
+    
+    // Apply the rotation to the physics body
+    const q = new Ammo.btQuaternion();
+    q.setRotation(new Ammo.btVector3(1, 0, 0), slopeAngle);
+    slopeTransform.setRotation(q);
+    
+    // Create rigid body
+    const mass = 0; // Static object
+    createRigidBody(Ammo, slopeMesh, slopeShape, mass, slopeTransform);
+    
+    return slopeMesh;
+}
+
 function createTank(Ammo) {
-    const tankDepth = 4;  // Reduced from 8 to 4 (50% thinner)
-    const tankWidth = 24;  // Wide enough to cover all pegs with some margin
+    const tankDepth = 4;  // Keep same depth
+    const tankWidth = 18;  // Slightly narrower for toy-like proportions
+    const tankHeight = 40;  // Keep the same height
     const panelThickness = 0.05;
     
-    // Create material - transparent blue
-    const tankMaterial = new THREE.MeshPhongMaterial({
-        color: 0x7eb8dd, 
+    // Create materials
+    
+    // Clear plastic material for main tank body
+    const tankClearMaterial = new THREE.MeshPhongMaterial({
+        color: 0xc0e8ff, // Very light blue tint
         transparent: true, 
-        opacity: 0.3,
-        shininess: 0 // Disable specular highlights for performance
+        opacity: 0.2,
+        shininess: 90, // More glossy/plastic look
+        specular: 0x666666 // Light specular highlight
     });
     
-    // Create tank panels
-    createTankPanel(Ammo, tankMaterial, [tankWidth, TANK_HEIGHT, panelThickness], [0, 0, tankDepth/2]);
-    createTankPanel(Ammo, tankMaterial, [tankWidth, TANK_HEIGHT, panelThickness], [0, 0, -tankDepth/2]);
-    createTankPanel(Ammo, tankMaterial, [panelThickness, TANK_HEIGHT, tankDepth], [-tankWidth/2, 0, 0]);
-    createTankPanel(Ammo, tankMaterial, [panelThickness, TANK_HEIGHT, tankDepth], [tankWidth/2, 0, 0]);
-    createTankPanel(Ammo, tankMaterial, [tankWidth, panelThickness, tankDepth], [0, TANK_HEIGHT/2, 0]);
-    createTankPanel(Ammo, tankMaterial, [tankWidth, panelThickness, tankDepth], [0, -TANK_HEIGHT/2, 0]);
+    // Red plastic material for top and bottom
+    const tankRedMaterial = new THREE.MeshPhongMaterial({
+        color: 0xdd1111, // Bright red
+        shininess: 70,
+        specular: 0x666666 // Light specular highlight
+    });
+    
+    // Position tank on the floor
+    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Position the tank directly on the floor
+    
+    // Create tank panels - sides are clear plastic
+    
+    // Front panel
+    createTankPanel(Ammo, tankClearMaterial, [tankWidth, tankHeight - 6, panelThickness], [0, tankY, tankDepth/2]);
+    
+    // Back panel
+    createTankPanel(Ammo, tankClearMaterial, [tankWidth, tankHeight - 6, panelThickness], [0, tankY, -tankDepth/2]);
+    
+    // Left panel
+    createTankPanel(Ammo, tankClearMaterial, [panelThickness, tankHeight - 6, tankDepth], [-tankWidth/2, tankY, 0]);
+    
+    // Right panel
+    createTankPanel(Ammo, tankClearMaterial, [panelThickness, tankHeight - 6, tankDepth], [tankWidth/2, tankY, 0]);
+    
+    // Top panel - red
+    createTankPanel(Ammo, tankRedMaterial, [tankWidth, 3, tankDepth], [0, tankY + (tankHeight - 6)/2 + 1.5, 0]);
+    
+    // Bottom panel - red
+    createTankPanel(Ammo, tankRedMaterial, [tankWidth, 3, tankDepth], [0, tankY - (tankHeight - 6)/2 - 1.5, 0]);
+    
+    // Add a base for the tank
+    const baseWidth = tankWidth + 4;
+    const baseHeight = 6;
+    const baseDepth = tankDepth + 2;
+    
+    // Create base geometry
+    const baseGeometry = new THREE.BoxGeometry(baseWidth, baseHeight, baseDepth);
+    const baseMesh = new THREE.Mesh(baseGeometry, tankRedMaterial);
+    baseMesh.position.set(0, tankY - (tankHeight - 6)/2 - 4.5, 0);
+    scene.add(baseMesh);
+    tankPanels.push(baseMesh);
+    
+    // Create physics body for base
+    const baseShape = new Ammo.btBoxShape(new Ammo.btVector3(baseWidth/2, baseHeight/2, baseDepth/2));
+    const baseTransform = new Ammo.btTransform();
+    baseTransform.setIdentity();
+    baseTransform.setOrigin(new Ammo.btVector3(baseMesh.position.x, baseMesh.position.y, baseMesh.position.z));
+    createRigidBody(Ammo, baseMesh, baseShape, 0, baseTransform);
+    
+    // Add control knob on the right side
+    const knobGeometry = new THREE.CylinderGeometry(1.5, 1.5, 1, 16);
+    const knobMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0xeeeeee, // Off-white 
+        shininess: 80
+    });
+    const knobMesh = new THREE.Mesh(knobGeometry, knobMaterial);
+    // Rotate to make cylinder horizontal
+    knobMesh.rotation.z = Math.PI/2;
+    knobMesh.position.set(tankWidth/2 + 1.5, tankY - (tankHeight - 6)/2 - 2.5, 0);
+    scene.add(knobMesh);
+    
+    // Round the edges of the tank by adding cylindrical edge pieces
+    addRoundedEdges(Ammo, tankWidth, tankDepth, tankHeight, tankClearMaterial, tankY);
 }
 
 function createTankPanel(Ammo, material, dimensions, position) {
@@ -215,31 +317,87 @@ function createTankPanel(Ammo, material, dimensions, position) {
     createRigidBody(Ammo, mesh, shape, mass, transform);
 }
 
+// Function to add rounded edges to the tank
+function addRoundedEdges(Ammo, width, depth, height, material, tankY) {
+    const radius = 0.5; // Edge radius
+    const segments = 8;  // Number of segments for the cylinders
+    const actualHeight = height - 6; // Account for red top and bottom
+    
+    // Create vertical edge cylinders (at the 4 corners)
+    for (let x = -1; x <= 1; x += 2) {
+        for (let z = -1; z <= 1; z += 2) {
+            const edgeGeometry = new THREE.CylinderGeometry(radius, radius, actualHeight, segments, 1, false, Math.PI/2, Math.PI/2);
+            const edgeMesh = new THREE.Mesh(edgeGeometry, material);
+            
+            edgeMesh.position.set(x * (width/2), tankY, z * (depth/2));
+            
+            // Rotate based on which corner this is
+            if (x > 0 && z > 0) { 
+                edgeMesh.rotation.y = 0;
+            } else if (x < 0 && z > 0) {
+                edgeMesh.rotation.y = Math.PI/2;
+            } else if (x < 0 && z < 0) {
+                edgeMesh.rotation.y = Math.PI;
+            } else {
+                edgeMesh.rotation.y = -Math.PI/2; 
+            }
+            
+            scene.add(edgeMesh);
+        }
+    }
+}
+
 function createPegs(Ammo) {
-    // Create materials (shared for all pegs)
-    const pegMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0x999999,
-        shininess: 0 // Disable specular highlights for performance
-    });
+    // Get the tank's vertical position
+    const tankDepth = 4;
+    const tankHeight = 40;
+    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
+    
+    // Define matching colors for pegs to match torus colors
+    const pegColors = [
+        0xff3333, // Red
+        0x33ff33, // Green
+        0x3333ff, // Blue
+        0xffff33, // Yellow
+        0xff33ff  // Purple
+    ];
+    
+    // Red plastic for bases (same as tank base)
     const baseMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0xff3333,
-        shininess: 0 // Disable specular highlights for performance
+        color: 0xdd1111, // Bright red
+        shininess: 70,
+        specular: 0x666666
     });
     
     // Create shared geometries
-    const pinGeometry = new THREE.CylinderGeometry(0.15, 0.15, 2.5, 8); // Reduced segments
-    const baseGeometry = new THREE.CylinderGeometry(1.2, 1.2, 0.5, 16); // Reduced segments
+    const pinGeometry = new THREE.CylinderGeometry(0.15, 0.15, 2.5, 8); // Pin is thinner
+    
+    // Add rounded tops to pins
+    const pinCapGeometry = new THREE.SphereGeometry(0.15, 8, 8);
     
     // Create shared compound shape for physics
     const compoundShape = createPegCompoundShape(Ammo);
     
     // Create 5 pegs in a row
     for (let i = 0; i < 5; i++) {
-        const x = (i - 2) * 4;  // Space them out
+        const x = (i - 2) * 3;  // Space them closer for the toy look
+        
+        // Create material for this peg with matching color
+        const pegMaterial = new THREE.MeshPhongMaterial({ 
+            color: pegColors[i],
+            transparent: true,
+            opacity: 0.7, // Semi-transparent
+            shininess: 90,
+            specular: 0x666666,
+            side: THREE.DoubleSide, // Render both sides of geometry
+            depthWrite: false, // Improve transparency rendering
+            polygonOffset: true,
+            polygonOffsetFactor: -4
+        });
         
         // Create parent group
         const pegGroup = new THREE.Group();
-        pegGroup.position.set(x, 0, 0);
+        pegGroup.position.set(x, tankY, 0);  // Position relative to tank's Y position
         scene.add(pegGroup);
         pegs.push(pegGroup);
         
@@ -248,15 +406,21 @@ function createPegs(Ammo) {
         pinMesh.position.set(0, 2.05, 0);
         pegGroup.add(pinMesh);
         
-        // Create base part
-        const baseMesh = new THREE.Mesh(baseGeometry, baseMaterial);
-        baseMesh.position.set(0, 0.55, 0);
+        // Add rounded cap at the top of each pin
+        const pinCapMesh = new THREE.Mesh(pinCapGeometry, pegMaterial);
+        pinCapMesh.position.set(0, 3.4, 0); // Position at top of pin
+        pegGroup.add(pinCapMesh);
+        
+        // Create base part - flat disc
+        const baseGeometry = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16); // Smaller, flatter base
+        const baseMesh = new THREE.Mesh(baseGeometry, pegMaterial); // Use same colored material for base
+        baseMesh.position.set(0, 0.3, 0); // Lower base 
         pegGroup.add(baseMesh);
         
         // Create rigid body
         const transform = new Ammo.btTransform();
         transform.setIdentity();
-        transform.setOrigin(new Ammo.btVector3(x, 0, 0));
+        transform.setOrigin(new Ammo.btVector3(x, tankY, 0));
         
         const mass = 0; // static object
         createRigidBody(Ammo, pegGroup, compoundShape, mass, transform);
@@ -274,25 +438,36 @@ function createPegCompoundShape(Ammo) {
     pinTransform.setOrigin(new Ammo.btVector3(0, 2.05, 0));
     compoundShape.addChildShape(pinTransform, pinShape);
     
-    // Add base shape - also a vertical cylinder
-    const baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(1.2, 0.25, 1.2)); // Half-height is 0.25
+    // Add pin cap - sphere at top
+    const capShape = new Ammo.btSphereShape(0.15);
+    const capTransform = new Ammo.btTransform();
+    capTransform.setIdentity();
+    capTransform.setOrigin(new Ammo.btVector3(0, 3.4, 0));
+    compoundShape.addChildShape(capTransform, capShape);
+    
+    // Add base shape - flatter cylinder
+    const baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.8, 0.1, 0.8)); // Smaller, flatter base
     const baseTransform = new Ammo.btTransform();
     baseTransform.setIdentity();
-    baseTransform.setOrigin(new Ammo.btVector3(0, 0.55, 0));
+    baseTransform.setOrigin(new Ammo.btVector3(0, 0.3, 0));
     compoundShape.addChildShape(baseTransform, baseShape);
     
     return compoundShape;
 }
 
 function createToruses(Ammo, count) {
-    // Tank dimensions for reference
-    const tankWidth = 24;
+    // Get the tank's vertical position
     const tankDepth = 4;
+    const tankHeight = 40;
+    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
+    
+    // Tank dimensions for reference
+    const tankWidth = 18;
     
     // Grid layout parameters
     const maxPerRow = 5;
     const spacing = 4; // Space between toruses
-    const startHeight = 15; // Start from the top of the tank
+    const startHeight = tankY + 15; // Start from the top of the tank
     const heightIncrement = 3; // Vertical distance between rows
     
     // Create toruses in a grid pattern
@@ -337,11 +512,16 @@ function createToruses(Ammo, count) {
         quaternion.setRotation(new Ammo.btVector3(1, 0, 0), Math.PI / 2);
         transform.setRotation(quaternion);
         
-        const mass = 1;
-        const localInertia = new Ammo.btVector3(0, 0, 0);
-        torusCompoundShape.calculateLocalInertia(mass, localInertia);
+        // Set mass, linear damping, and angular damping
+        const mass = 1.0;
+        const linearDamping = 0.5;  // Add some drag to slow down motion
+        const angularDamping = 0.5; // Add some rotational damping
         
-        createRigidBody(Ammo, torus, torusCompoundShape, mass, transform, 0.3, 0.3);
+        // Create the rigid body
+        let body = createRigidBody(Ammo, torus, torusCompoundShape, mass, transform, linearDamping, angularDamping);
+        
+        // Allow sleeping to improve performance
+        body.setSleepingThresholds(0.1, 0.1);
     }
 }
 
@@ -382,34 +562,68 @@ function createCompoundTorusShape(Ammo) {
 }
 
 function createBubble(Ammo) {
-    // Create visual bubble (using a sphere since Three.js renders them well)
-    const geometry = new THREE.SphereGeometry(2.0, 16, 12); // Reduced segments
-    const material = new THREE.MeshPhongMaterial({ 
-        color: 0xff0000,  // Red bubble
-        transparent: true,
-        opacity: 0.8,
-        shininess: 0 // Disable specular highlights for performance
-    });
-    bubble = new THREE.Mesh(geometry, material);
-    bubble.position.set(0, -15, 0); // Bottom of the tank
-    scene.add(bubble);
+    // Get the tank's vertical position
+    const tankDepth = 4;
+    const tankHeight = 40;
+    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
     
-    // Create physics body (using a sphere shape)
-    const shape = new Ammo.btSphereShape(2.0);
-    const transform = new Ammo.btTransform();
-    transform.setIdentity();
-    transform.setOrigin(new Ammo.btVector3(0, -15, 0));
+    // Define bubble parameters
+    const bubbleCount = 8;
+    const bubbleSizes = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.6, 0.5];
+    const bubbles = [];
     
-    const mass = 0.1; // Light mass for buoyancy
-    const localInertia = new Ammo.btVector3(0, 0, 0);
-    shape.calculateLocalInertia(mass, localInertia);
+    // Create multiple small bubbles
+    for (let i = 0; i < bubbleCount; i++) {
+        // Randomly choose a size
+        const size = bubbleSizes[i % bubbleSizes.length];
+        
+        // Create bubble visual (transparent white sphere)
+        const bubbleGeometry = new THREE.SphereGeometry(size, 16, 16);
+        const bubbleMaterial = new THREE.MeshPhongMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.3,
+            shininess: 90,
+            specular: 0x666666
+        });
+        
+        const bubbleMesh = new THREE.Mesh(bubbleGeometry, bubbleMaterial);
+        
+        // Randomly position bubble within tank bounds
+        const tankWidth = 18;
+        const x = (Math.random() - 0.5) * (tankWidth - size * 2); 
+        const y = tankY - tankHeight/4 - Math.random() * tankHeight/4; // Position in bottom half of tank
+        const z = (Math.random() - 0.5) * (tankDepth - size * 2);
+        
+        bubbleMesh.position.set(x, y, z);
+        scene.add(bubbleMesh);
+        bubbles.push(bubbleMesh);
+        
+        // Create physics body for bubble
+        const bubbleShape = new Ammo.btSphereShape(size);
+        const transform = new Ammo.btTransform();
+        transform.setIdentity();
+        transform.setOrigin(new Ammo.btVector3(x, y, z));
+        
+        // Set very low mass for buoyancy
+        const mass = 0.01;
+        const linearDamping = 0.8; // Water-like damping
+        const angularDamping = 0.2;
+        
+        // Create rigid body
+        const body = createRigidBody(Ammo, bubbleMesh, bubbleShape, mass, transform, linearDamping, angularDamping);
+        
+        // Increase restitution (bounciness)
+        body.setRestitution(0.8);
+        
+        // Decrease friction
+        body.setFriction(0.1);
+    }
     
-    const body = createRigidBody(Ammo, bubble, shape, mass, transform);
+    // Store the first bubble for compatibility
+    bubble = bubbles[0];
     
-    // Add water-like physics properties
-    body.setDamping(0.9, 0.9);   // High damping for water resistance
-    body.setRestitution(0.7);    // Bouncy
-    body.setFriction(0.1);       // Low friction in water
+    return bubbles;
 }
 
 function createRigidBody(Ammo, threeObject, physicsShape, mass, transform, linearDamping = 0, angularDamping = 0) {
@@ -494,6 +708,18 @@ function setupEventListeners() {
         const maxStrength = parseInt(document.getElementById('force-strength').value);
         applyRandomForcesToToruses(maxStrength);
     });
+    
+    // Add drop on slope button
+    document.getElementById('drop-on-slope').addEventListener('click', function() {
+        dropRingsOnSlope();
+    });
+    
+    // Add keyboard shortcut - press 'S' to drop on slope
+    window.addEventListener('keydown', function(event) {
+        if (event.key === 's' || event.key === 'S') {
+            dropRingsOnSlope();
+        }
+    });
 }
 
 function applyForceToToruses(forceVector) {
@@ -523,6 +749,44 @@ function applyRandomForcesToToruses(maxStrength) {
             body.activate(true);
             body.applyCentralImpulse(randomForce);
         }
+    }
+}
+
+// Function to drop rings on the slope
+function dropRingsOnSlope() {
+    // Get the tank's vertical position
+    const tankHeight = 40;
+    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
+    
+    // Activate each torus physics body
+    for (let i = 0; i < toruses.length; i++) {
+        const torus = toruses[i];
+        const physicsBody = torus.userData.physicsBody;
+        
+        // Position above the slope with random x-coordinate
+        const x = Math.random() * 30 - 15; // Range: (-15, 15)
+        const y = FLOOR_HEIGHT + 25; // Higher above the floor
+        const z = Math.random() * 20 - 60; // Range: (-60, -40) behind the tank on the slope
+        
+        // Reset position
+        const transform = new Ammo.btTransform();
+        transform.setIdentity();
+        transform.setOrigin(new Ammo.btVector3(x, y, z));
+        
+        // Set rotation
+        const quaternion = new Ammo.btQuaternion();
+        quaternion.setRotation(new Ammo.btVector3(1, 0, 0), Math.PI / 2); // Horizontal orientation
+        transform.setRotation(quaternion);
+        
+        // Apply transform
+        physicsBody.setWorldTransform(transform);
+        
+        // Reset velocity and angular velocity
+        physicsBody.setLinearVelocity(new Ammo.btVector3(0, 0, 0));
+        physicsBody.setAngularVelocity(new Ammo.btVector3(0, 0, 0));
+        
+        // Activate the body
+        physicsBody.activate();
     }
 }
 
