@@ -83,7 +83,7 @@ Ammo().then(function(Ammo) {
     var pinShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.15, 1.25, 0.15)); // Height 2.5 (half-height is 1.25)
     
     // Create the base shape (cylinder)
-    var baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(1.2, 0.25, 1.2)); // Reduced from 1.5 to 1.2 (20% smaller)
+    var baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(1.5, 0.25, 1.5)); // Radius 1.5, height 0.5 (half-height 0.25)
     
     // Set transforms for each shape
     var pinTransform = new Ammo.btTransform();
