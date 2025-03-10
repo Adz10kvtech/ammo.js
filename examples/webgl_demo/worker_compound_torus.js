@@ -14,7 +14,7 @@ Ammo().then(function(Ammo) {
   var overlappingPairCache = new Ammo.btDbvtBroadphase();
   var solver = new Ammo.btSequentialImpulseConstraintSolver();
   var dynamicsWorld = new Ammo.btDiscreteDynamicsWorld(dispatcher, overlappingPairCache, solver, collisionConfiguration);
-  dynamicsWorld.setGravity(new Ammo.btVector3(0, -10, 0));
+  dynamicsWorld.setGravity(new Ammo.btVector3(0, -3.0, 0));
 
   // Create ground shape
   var groundShape = new Ammo.btBoxShape(new Ammo.btVector3(50, 50, 50));
@@ -131,8 +131,10 @@ Ammo().then(function(Ammo) {
       var rbInfo = new Ammo.btRigidBodyConstructionInfo(mass, myMotionState, ballShape, localInertia);
       var body = new Ammo.btRigidBody(rbInfo);
       
-      // Increase bounciness
-      body.setRestitution(0.8);
+      // Add water-like physics properties
+      body.setDamping(0.7, 0.7);   // High damping for water resistance
+      body.setRestitution(0.5);    // Medium bounciness
+      body.setFriction(0.3);       // Low friction in water
       
       dynamicsWorld.addRigidBody(body);
       smallBalls.push(body);
@@ -294,10 +296,10 @@ Ammo().then(function(Ammo) {
       var rbInfo = new Ammo.btRigidBodyConstructionInfo(mass, myMotionState, torusShape, localInertia);
       var body = new Ammo.btRigidBody(rbInfo);
 
-      // Add damping for stability
-      body.setDamping(0.2, 0.2);
-      body.setFriction(0.8);
-      body.setRestitution(0.3);
+      // Add damping for water-like resistance
+      body.setDamping(0.3, 0.3); // Increased linear and angular damping for water resistance
+      body.setFriction(0.4);      // Reduced friction slightly
+      body.setRestitution(0.2);   // Reduced bounciness
 
       dynamicsWorld.addRigidBody(body);
       bodies.push(body);
@@ -306,7 +308,6 @@ Ammo().then(function(Ammo) {
     // Create fixed pegs and small balls
     setupPegs();
     setupTank(); // Add the tank
-    setupSmallBalls();
     
     resetPositions();
   }
