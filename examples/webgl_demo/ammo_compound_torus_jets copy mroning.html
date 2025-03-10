@@ -50,9 +50,6 @@
           canvas.width = screen.width*0.75;
           canvas.height = screen.height*0.50;
 
-          // Define tankHeight at the beginning so it's available throughout the function
-          var tankHeight = 40;  // Increased from 25 to 40 for a taller tank
-          
           var gl = CubicVR.init(canvas);
 
           if (!gl) {
@@ -113,58 +110,28 @@
             scene.bindSceneObject(toruses[i], true);
           }
 
-          // Create peg material
+          // Create pegs (vertical cylinders)
           var pegMaterial = new CubicVR.Material({
             color: [0.6, 0.6, 0.6]  // Gray pegs
           });
+          
+          var pegMesh = new CubicVR.primitives.cylinder({
+            radius: 0.15,
+            height: 20.0,  // Increased from 8.0 to 20.0
+            material: pegMaterial
+          }).calcNormals().triangulateQuads().compile().clean();
 
-          var baseMaterial = new CubicVR.Material({
-            color: [1.0, 0.1, 0.1]  // Brighter red spherical bases for better visibility
-          });
-
-          // Create 5 pegs in a row with cylindrical bases
+          // Create 5 pegs in a row
           for (var i = 0; i < 5; i++) {
             var x = (i - 2) * 4;  // Space them out
-            
-            // Create pin part (2.5 units tall)
-            var pinMesh = new CubicVR.primitives.cylinder({
-              radius: 0.15,
-              height: 2.5,     // Increased from 1.5 to 2.5 units (2.5cm) for taller pins
-              material: pegMaterial
-            }).calcNormals().triangulateQuads().compile().clean();
-            
-            // Create base part (cylinder)
-            var baseMesh = new CubicVR.primitives.cylinder({
-              radius: 1.2,     // Reduced from 1.5 to 1.2 (20% smaller)
-              height: 0.5,     // Short height for a disc-like appearance
-              material: baseMaterial,
-              segments: 16
-            }).calcNormals().triangulateQuads().compile().clean();
-            
-            // Position pin at its proper height
-            var pin = new CubicVR.SceneObject({ 
-              mesh: pinMesh, 
-              position: [0, 2.05, 0]  // Updated position to 2.05 (0.2 base + 2.5/2 = 2.05)
+            // Position pegs so they're sitting on the bottom of the tank
+            // tankHeight/2 is the bottom of the tank, then add half the peg height since cylinders are centered
+            var y = -tankHeight/2 + 10.0; // Half the peg height (20.0/2 = 10.0)
+            pegs[i] = new CubicVR.SceneObject({ 
+              mesh: pegMesh, 
+              position: [x, y, 0]  // Now positioned at the bottom of the tank
             });
-            
-            // Position cylinder base
-            var base = new CubicVR.SceneObject({ 
-              mesh: baseMesh, 
-              position: [0, 0.55, 0]  // Position adjusted for cylinder height (0.5/2 + 0.3 above floor)
-            });
-            
-            // Create parent object to group pin and base
-            var pegParent = new CubicVR.SceneObject({
-              position: [x, 0, 0]
-            });
-            
-            // Add pin and base to the parent
-            pegParent.bindChild(pin);
-            pegParent.bindChild(base);
-            
-            // Add the assembled peg to the scene
-            scene.bindSceneObject(pegParent, true);
-            pegs[i] = pegParent;
+            scene.bindSceneObject(pegs[i], true);
           }
           
           // Create small balls that can pass through the holes
@@ -213,6 +180,7 @@
           // Create tank front and back panels
           var tankDepth = 4;  // Reduced from 8 to 4 (50% thinner)
           var tankWidth = 24;  // Wide enough to cover all pegs with some margin
+          var tankHeight = 25;  // Much taller now (was 12)
           
           // Front panel
           var tankFrontMesh = new CubicVR.primitives.box({

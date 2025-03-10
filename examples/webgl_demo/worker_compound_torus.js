@@ -74,9 +74,31 @@ Ammo().then(function(Ammo) {
     return compoundShape;
   }
 
-  // Create the peg shape (vertical cylinder)
+  // Create the peg shape (vertical pin with cylindrical base)
   function createPegShape() {
-    return new Ammo.btCylinderShape(new Ammo.btVector3(0.15, 10.0, 0.15)); // Height 20.0 (half-height is 10.0)
+    // Create a compound shape for the peg
+    var compoundShape = new Ammo.btCompoundShape();
+    
+    // Create the pin shape (thin vertical cylinder)
+    var pinShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.15, 1.25, 0.15)); // Height 2.5 (half-height is 1.25)
+    
+    // Create the base shape (cylinder)
+    var baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(1.2, 0.25, 1.2)); // Reduced from 1.5 to 1.2 (20% smaller)
+    
+    // Set transforms for each shape
+    var pinTransform = new Ammo.btTransform();
+    pinTransform.setIdentity();
+    pinTransform.setOrigin(new Ammo.btVector3(0, 2.05, 0)); // Adjusted to 2.05 based on new height
+    
+    var baseTransform = new Ammo.btTransform();
+    baseTransform.setIdentity();
+    baseTransform.setOrigin(new Ammo.btVector3(0, 0.55, 0)); // Adjusted for cylinder height
+    
+    // Add shapes to compound
+    compoundShape.addChildShape(pinTransform, pinShape);
+    compoundShape.addChildShape(baseTransform, baseShape);
+    
+    return compoundShape;
   }
 
   // Create small balls that can pass through torus holes
@@ -85,21 +107,23 @@ Ammo().then(function(Ammo) {
   }
 
   function setupPegs() {
-    var pegShape = createPegShape();
-    var tankHeight = 25; // Match the tank height from setupTank
+    var tankHeight = 40; // Match the tank height from setupTank (increased from 25 to 40)
     
     for (var i = 0; i < NUM_PEGS; i++) {
+      // Vary the height of each peg - with HALVED heights
+      var pegHeight = 5.0 + (i * 0.75);  // Heights will be 5.0, 5.75, 6.5, 7.25, 8.0 (half of previous values)
+      
+      var pegShape = createPegShape();
       var pegTransform = new Ammo.btTransform();
       pegTransform.setIdentity();
       
       // Position pegs evenly spaced in a row
       var x = (i - (NUM_PEGS/2)) * 4;
       
-      // Position at the bottom of the tank
-      // -tankHeight/2 is the bottom of the tank, then add 10.0 (half the peg height)
-      var y = -tankHeight/2 + 1.0;
+      // Position pegs so their bottom is at y=0
+      var y = pegHeight/2;  // Half height because cylinder is centered
       
-      pegTransform.setOrigin(new Ammo.btVector3(x, y, 0)); // Now positioned at the bottom of the tank
+      pegTransform.setOrigin(new Ammo.btVector3(x, y, 0));
       
       var mass = 0; // Static (fixed) object
       var localInertia = new Ammo.btVector3(0, 0, 0);
@@ -196,7 +220,7 @@ Ammo().then(function(Ammo) {
   function setupTank() {
     var tankDepth = 4;  // Reduced from 8 to 4 (50% thinner)
     var tankWidth = 24;  // Wide enough to cover all pegs with some margin
-    var tankHeight = 25;  // Much taller now (was 12)
+    var tankHeight = 40;  // Increased from 25 to 40 for a taller tank
     var panelThickness = 0.05;
     
     // Create front panel
