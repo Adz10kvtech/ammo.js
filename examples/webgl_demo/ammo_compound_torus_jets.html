@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+    <head>
+      <title>Ammo.js Compound Torus Demo</title>
+      <script src="CubicVR.min.js" type="text/javascript"></script>
+      <style type="text/css">
+        body {
+          background-color: #ccc;
+          text-size-adjust: none;
+        }
+      </style>
+
+      <script type="text/javascript">
+        // Main demo code
+        var toruses = [];
+        var pegs = [];
+        var smallBalls = [];
+        var tankPanels = []; // Add tank panels array
+        var bubble; // Add bubble object
+
+        var lastFPS = 0;
+        var outElement = null;
+        var currFPS = 0, allFPS = 0;
+        function showFPS() {
+          if (!outElement) outElement = document.getElementById('out');
+          var now = Date.now();
+          if (now - lastFPS > 333) {
+            outElement.value = currFPS + ' / ' + allFPS;
+            lastFPS = now;
+          }
+        }
+
+        var FLOOR_SIZE = 100;
+        var FLOOR_HEIGHT = -56;
+        var TORUS_RADIUS = 1.0;      // Major radius of the torus
+        var TUBE_RADIUS = 0.3;       // Minor radius of the torus
+        var TORUS_SEGMENTS = 16;     // Number of segments around the major radius
+        var TUBE_SEGMENTS = 12;      // Number of segments around the minor radius
+
+        var physicsWorker = null;
+
+        // CubicVR code
+        function startUp(NUM) {
+          var NUMRANGE = [];
+          while (NUMRANGE.length < NUM) NUMRANGE.push(NUMRANGE.length+1);
+
+          document.getElementById('postdiv').innerHTML = '(' + NUM + ' toruses)';
+          document.getElementById('during').style.visibility = 'visible';
+
+          var canvas = document.getElementById("canvas");
+          canvas.width = screen.width*0.75;
+          canvas.height = screen.height*0.50;
+
+          // Define tankHeight at the beginning so it's available throughout the function
+          var tankHeight = 40;  // Increased from 25 to 40 for a taller tank
+          
+          var gl = CubicVR.init(canvas);
+
+          if (!gl) {
+            alert("Sorry, no WebGL support :(");
+            return;
+          };
+
+          var quaternion = new CubicVR.Quaternion;
+
+          var scene = new CubicVR.Scene(canvas.width, canvas.height, 70);
+
+          var light = new CubicVR.Light({
+            type: CubicVR.enums.light.type.POINT,
+            intensity: 0.9,
+            areaCeiling: 80,
+            areaFloor: FLOOR_HEIGHT,
+            areaAxis: [15, 10],
+            distance: 60,
+            mapRes: 1024
+          });
+          scene.bindLight(light);
+
+          scene.camera.position = [0, 5, 25];
+          scene.camera.target = [0, 0, 0];
+
+          var torusMaterials = [];
+          var torusMeshes = [];
+
+          // Create torus materials with different colors
+          var colors = [
+            [1.0, 0.2, 0.2],  // Red
+            [0.2, 1.0, 0.2],  // Green
+            [0.2, 0.2, 1.0],  // Blue
+            [1.0, 1.0, 0.2],  // Yellow
+            [1.0, 0.2, 1.0]   // Purple
+          ];
+
+          for (var i = 0; i < 5; i++) {
+            torusMaterials[i] = new CubicVR.Material({
+              color: colors[i]
+            });
+            
+            torusMeshes[i] = new CubicVR.primitives.torus({
+              majorRadius: TORUS_RADIUS,
+              minorRadius: TUBE_RADIUS,
+              segmentsR: TORUS_SEGMENTS,
+              segmentsT: TUBE_SEGMENTS,
+              material: torusMaterials[i]
+            }).calcNormals().triangulateQuads().compile().clean();
+          }
+
+          // Create toruses
+          for (var i = 0; i < NUM; i++) {
+            toruses[i] = new CubicVR.SceneObject({ 
+              mesh: torusMeshes[Math.floor(Math.random()*5)], 
+              position: [0, -10000, 0] 
+            });
+            scene.bindSceneObject(toruses[i], true);
+          }
+
+          // Create peg material
+          var pegMaterial = new CubicVR.Material({
+            color: [0.6, 0.6, 0.6]  // Gray pegs
+          });
+
+          var baseMaterial = new CubicVR.Material({
+            color: [1.0, 0.1, 0.1]  // Brighter red spherical bases for better visibility
+          });
+
+          // Create 5 pegs in a row with cylindrical bases
+          for (var i = 0; i < 5; i++) {
+            var x = (i - 2) * 4;  // Space them out
+            
+            // Create pin part (2.5 units tall)
+            var pinMesh = new CubicVR.primitives.cylinder({
+              radius: 0.15,
+              height: 2.5,     // Increased from 1.5 to 2.5 units (2.5cm) for taller pins
+              material: pegMaterial
+            }).calcNormals().triangulateQuads().compile().clean();
+            
+            // Create base part (cylinder)
+            var baseMesh = new CubicVR.primitives.cylinder({
+              radius: 1.5,     // Wide cylinder base for stability
+              height: 0.5,     // Short height for a disc-like appearance
+              material: baseMaterial,
+              segments: 16
+            }).calcNormals().triangulateQuads().compile().clean();
+            
+            // Position pin at its proper height
+            var pin = new CubicVR.SceneObject({ 
+              mesh: pinMesh, 
+              position: [0, 2.05, 0]  // Updated position to 2.05 (0.2 base + 2.5/2 = 2.05)
+            });
+            
+            // Position cylinder base
+            var base = new CubicVR.SceneObject({ 
+              mesh: baseMesh, 
+              position: [0, 0.55, 0]  // Position adjusted for cylinder height (0.5/2 + 0.3 above floor)
+            });
+            
+            // Create parent object to group pin and base
+            var pegParent = new CubicVR.SceneObject({
+              position: [x, 0, 0]
+            });
+            
+            // Add pin and base to the parent
+            pegParent.bindChild(pin);
+            pegParent.bindChild(base);
+            
+            // Add the assembled peg to the scene
+            scene.bindSceneObject(pegParent, true);
+            pegs[i] = pegParent;
+          }
+          
+          // Create small balls that can pass through the holes
+          var ballMaterial = new CubicVR.Material({
+            color: [1.0, 0.7, 0.0]  // Orange balls
+          });
+          
+          var ballMesh = new CubicVR.primitives.sphere({
+            radius: TORUS_RADIUS * 0.4,  // Smaller than the torus hole
+            material: ballMaterial,
+            segments: 12
+          }).calcNormals().compile().clean();
+          
+          // Create 10 small balls
+          for (var i = 0; i < 10; i++) {
+            smallBalls[i] = new CubicVR.SceneObject({ 
+              mesh: ballMesh, 
+              position: [0, -10000, 0] 
+            });
+            scene.bindSceneObject(smallBalls[i], true);
+          }
+
+          // Create floor
+          var floorMaterial = new CubicVR.Material({
+            color: [0.8, 0.8, 0.8]  // Gray floor
+          });
+          
+          var floorMesh = new CubicVR.primitives.box({
+            size: FLOOR_SIZE,
+            material: floorMaterial,
+            uvmapper: {
+                projectionMode: CubicVR.enums.uv.projection.CUBIC,
+                scale: [4, 4, 4]
+            }
+          }).calcNormals().triangulateQuads().compile().clean();
+
+          var floor_ = new CubicVR.SceneObject({ mesh: floorMesh, position: [0, FLOOR_HEIGHT, 0] });
+          scene.bindSceneObject(floor_, true);
+
+          // Create water tank for ring game
+          var tankMaterial = new CubicVR.Material({
+            color: [0.7, 0.85, 0.95, 0.3],  // Light blue with more transparency (0.3 instead of 0.6)
+            opacity: 0.3  // Reduced from 0.6 to 0.3 for more transparency
+          });
+          
+          // Create tank front and back panels
+          var tankDepth = 4;  // Reduced from 8 to 4 (50% thinner)
+          var tankWidth = 24;  // Wide enough to cover all pegs with some margin
+          
+          // Front panel
+          var tankFrontMesh = new CubicVR.primitives.box({
+            size: [tankWidth, tankHeight, 0.05],  // Thin panel
+            material: tankMaterial
+          }).calcNormals().triangulateQuads().compile().clean();
+          
+          var tankFront = new CubicVR.SceneObject({ 
+            mesh: tankFrontMesh, 
+            position: [0, 0, tankDepth/2]  // Slightly in front of center
+          });
+          scene.bindSceneObject(tankFront, true);
+          
+          // Back panel
+          var tankBack = new CubicVR.SceneObject({ 
+            mesh: tankFrontMesh, 
+            position: [0, 0, -tankDepth/2]  // Slightly behind center
+          });
+          scene.bindSceneObject(tankBack, true);
+          
+          // Create side panels
+          var tankSideMesh = new CubicVR.primitives.box({
+            size: [0.05, tankHeight, tankDepth],  // Thin panel
+            material: tankMaterial
+          }).calcNormals().triangulateQuads().compile().clean();
+          
+          // Left panel
+          var tankLeft = new CubicVR.SceneObject({ 
+            mesh: tankSideMesh, 
+            position: [-tankWidth/2, 0, 0]
+          });
+          scene.bindSceneObject(tankLeft, true);
+          
+          // Right panel
+          var tankRight = new CubicVR.SceneObject({ 
+            mesh: tankSideMesh, 
+            position: [tankWidth/2, 0, 0]
+          });
+          scene.bindSceneObject(tankRight, true);
+          
+          // Create top and bottom panels
+          var tankTopBottomMesh = new CubicVR.primitives.box({
+            size: [tankWidth, 0.05, tankDepth],  // Thin panel
+            material: tankMaterial
+          }).calcNormals().triangulateQuads().compile().clean();
+          
+          // Top panel
+          var tankTop = new CubicVR.SceneObject({ 
+            mesh: tankTopBottomMesh, 
+            position: [0, tankHeight/2, 0]
+          });
+          scene.bindSceneObject(tankTop, true);
+          
+          // Bottom panel
+          var tankBottom = new CubicVR.SceneObject({ 
+            mesh: tankTopBottomMesh, 
+            position: [0, -tankHeight/2, 0]
+          });
+          scene.bindSceneObject(tankBottom, true);
+          
+          // Store tank panels in array
+          tankPanels = [tankFront, tankBack, tankLeft, tankRight, tankTop, tankBottom];
+
+          // Create bubble (representing the pump's bubble)
+          var bubbleMaterial = new CubicVR.Material({
+            color: [1.0, 0.0, 0.0]   // Simple solid red
+          });
+
+          // Use a cube instead of a sphere for more reliable rendering
+          var bubbleMesh = new CubicVR.primitives.box({
+            size: 3.0,               // Size comparable to the sphere radius
+            material: bubbleMaterial
+          }).calcNormals().triangulateQuads().compile().clean();
+
+          // Position bubble in the center-bottom of the tank
+          var bubble = new CubicVR.SceneObject({ 
+            mesh: bubbleMesh, 
+            position: [0, -15, 0]    // Bottom of the tank
+          });
+          scene.bindSceneObject(bubble, true);
+
+          // Worker
+          if (physicsWorker) physicsWorker.terminate();
+          physicsWorker = new Worker('worker_compound_torus.js');
+
+          physicsWorker.onmessage = function(event) {
+            var data = event.data;
+            if (data.isReady){
+              physicsWorker.postMessage({
+                num: NUM,
+                torusRadius: TORUS_RADIUS,
+                tubeRadius: TUBE_RADIUS
+              });
+              return;  
+            }
+            
+            // Update toruses
+            if (data.objects && data.objects.length == NUM) {
+              for (var i = 0; i < NUM; i++) {
+                var physicsObject = data.objects[i];
+                var renderObject = toruses[i];
+                renderObject.position[0] = physicsObject[0];
+                renderObject.position[1] = physicsObject[1];
+                renderObject.position[2] = physicsObject[2];
+                quaternion.x = physicsObject[3];
+                quaternion.y = physicsObject[4];
+                quaternion.z = physicsObject[5];
+                quaternion.w = physicsObject[6];
+                renderObject.rotation = quaternion.toEuler();
+              }
+            }
+            
+            // Update pegs
+            if (data.pegs) {
+              for (var i = 0; i < data.pegs.length; i++) {
+                var physicsObject = data.pegs[i];
+                var renderObject = pegs[i];
+                renderObject.position[0] = physicsObject[0];
+                renderObject.position[1] = physicsObject[1];
+                renderObject.position[2] = physicsObject[2];
+                quaternion.x = physicsObject[3];
+                quaternion.y = physicsObject[4];
+                quaternion.z = physicsObject[5];
+                quaternion.w = physicsObject[6];
+                renderObject.rotation = quaternion.toEuler();
+              }
+            }
+            
+            // Update small balls
+            if (data.balls) {
+              for (var i = 0; i < data.balls.length; i++) {
+                var physicsObject = data.balls[i];
+                var renderObject = smallBalls[i];
+                renderObject.position[0] = physicsObject[0];
+                renderObject.position[1] = physicsObject[1];
+                renderObject.position[2] = physicsObject[2];
+                quaternion.x = physicsObject[3];
+                quaternion.y = physicsObject[4];
+                quaternion.z = physicsObject[5];
+                quaternion.w = physicsObject[6];
+                renderObject.rotation = quaternion.toEuler();
+              }
+            }
+            
+            // Update tank panels
+            if (data.tankPanels) {
+              for (var i = 0; i < data.tankPanels.length && i < tankPanels.length; i++) {
+                var physicsObject = data.tankPanels[i];
+                var renderObject = tankPanels[i];
+                renderObject.position[0] = physicsObject[0];
+                renderObject.position[1] = physicsObject[1];
+                renderObject.position[2] = physicsObject[2];
+                quaternion.x = physicsObject[3];
+                quaternion.y = physicsObject[4];
+                quaternion.z = physicsObject[5];
+                quaternion.w = physicsObject[6];
+                renderObject.rotation = quaternion.toEuler();
+              }
+            }
+            
+            // Update bubble
+            if (data.bubble && data.bubble.length >= 7 && bubble) {
+              bubble.position[0] = data.bubble[0];
+              bubble.position[1] = data.bubble[1];
+              bubble.position[2] = data.bubble[2];
+              quaternion.x = data.bubble[3];
+              quaternion.y = data.bubble[4];
+              quaternion.z = data.bubble[5];
+              quaternion.w = data.bubble[6];
+              bubble.rotation = quaternion.toEuler();
+            }
+            
+            currFPS = data.currFPS;
+            allFPS = data.allFPS;
+          };
+
+          // Main loop
+          var mvc = new CubicVR.MouseViewController(canvas, scene.camera);
+
+          CubicVR.MainLoop(function(timer, gl) {
+            var dt = timer.getLastUpdateSeconds();
+            scene.render();
+            showFPS();
+          });
+          
+          // Setup force control UI
+          document.getElementById('force-strength').addEventListener('input', function() {
+            document.getElementById('strength-value').textContent = this.value;
+          });
+          
+          document.getElementById('apply-force').addEventListener('click', function() {
+            var direction = document.getElementById('force-direction').value;
+            var strength = parseInt(document.getElementById('force-strength').value);
+            
+            // Convert direction to vector
+            var forceVector = [0, 0, 0];
+            switch(direction) {
+              case 'up':
+                forceVector = [0, strength, 0];
+                break;
+              case 'down':
+                forceVector = [0, -strength, 0];
+                break;
+              case 'left':
+                forceVector = [-strength, 0, 0];
+                break;
+              case 'right':
+                forceVector = [strength, 0, 0];
+                break;
+              case 'forward':
+                forceVector = [0, 0, -strength];
+                break;
+              case 'backward':
+                forceVector = [0, 0, strength];
+                break;
+            }
+            
+            // Send force command to worker
+            physicsWorker.postMessage({
+              command: 'applyForce',
+              force: forceVector
+            });
+          });
+          
+          document.getElementById('apply-random').addEventListener('click', function() {
+            var strength = parseInt(document.getElementById('force-strength').value);
+            
+            // Send random force command to worker
+            physicsWorker.postMessage({
+              command: 'applyRandomForces',
+              maxStrength: strength
+            });
+          });
+        }
+      </script>
+    </head>
+    <body onload="document.getElementById('during').style.visibility = 'hidden'">
+      <center>
+        <h2>Ammo.js Compound Torus Demo</h2>
+        <p>This demo shows toruses with real holes that objects can pass through!</p>
+
+        <canvas id="canvas" width="1" height="1"></canvas>
+        <br>
+        <br>
+        <div id="before">
+          <form>
+            Toruses:
+            <select name="boxes">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="30">30</option>
+              <option value="50">50</option>
+            </select>
+            <input type="button" value="Start Demo!" onclick="startUp(boxes.value);">
+          </form>
+        </div>
+        <div id="during">
+          <div>Physics FPS (current / stable): <input type="text" id="out" readonly="1" size="7"></div>
+          <div id="postdiv"></div>
+          
+          <!-- Force controls for rings -->
+          <div id="force-controls" style="margin-top: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px; display: inline-block;">
+            <h3 style="margin-top: 0;">Ring Force Controls</h3>
+            <div style="margin-bottom: 10px;">
+              <label for="force-direction">Direction:</label>
+              <select id="force-direction">
+                <option value="up">Up</option>
+                <option value="down">Down</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+                <option value="forward">Forward</option>
+                <option value="backward">Backward</option>
+              </select>
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="force-strength">Strength:</label>
+              <input type="range" id="force-strength" min="1" max="1250" value="10" style="width: 150px;">
+              <span id="strength-value">10</span>
+            </div>
+            <div>
+              <button id="apply-force">Apply Force to All Rings</button>
+              <button id="apply-random">Apply Random Forces</button>
+            </div>
+          </div>
+        </div>
+        <p>
+        This demo shows compound toruses with real holes. The orange balls are small enough to pass through 
+        the holes, while the toruses can slide down the vertical pegs.
+        </p>
+        <p>
+        Built with <b><a href="https://github.com/kripken/ammo.js">ammo.js</a></b>, a port of
+        the <b><a href="http://www.bulletphysics.com">Bullet physics engine</a></b> using 
+        <b><a href="http://emscripten.org">Emscripten</a></b>. Rendering with
+        <b><a href="https://github.com/cjcliffe/CubicVR.js/">CubicVR.js</a></b>.
+        </p>
+      </center>
+    </body>
+</html> 

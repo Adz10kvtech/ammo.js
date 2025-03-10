@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Ammo.js Compound Torus Demo - Three.js Version</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            color: #61443e;
+            font-family: Monospace;
+            font-size: 13px;
+            text-align: center;
+            background-color: #ccc;
+            margin: 0px;
+            overflow: hidden;
+        }
+
+        #info {
+            position: absolute;
+            top: 0px;
+            width: 100%;
+            padding: 5px;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            display: inline-block;
+            text-align: center;
+        }
+
+        #fps {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 5px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Ammo.js Compound Torus Demo - Three.js Version</div>
+    <div id="fps">FPS: 0</div>
+    
+    <div id="start-screen" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(255,255,255,0.8); padding:20px; border-radius:10px;">
+        <h2>Ammo.js Compound Torus Demo</h2>
+        <p>This demo shows toruses with real holes that objects can pass through!</p>
+        <label for="torus-count">Toruses: </label>
+        <select id="torus-count">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+            <option value="30">30</option>
+            <option value="50">50</option>
+        </select>
+        <button id="start-button">Start Demo!</button>
+    </div>
+    
+    <div class="controls" id="force-controls" style="display:none;">
+        <h3 style="margin-top: 0;">Ring Force Controls</h3>
+        <div style="margin-bottom: 10px;">
+            <label for="force-direction">Direction:</label>
+            <select id="force-direction">
+                <option value="up">Up</option>
+                <option value="down">Down</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+                <option value="forward">Forward</option>
+                <option value="backward">Backward</option>
+            </select>
+        </div>
+        <div style="margin-bottom: 10px;">
+            <label for="force-strength">Strength:</label>
+            <input type="range" id="force-strength" min="1" max="1250" value="10" style="width: 150px;">
+            <span id="strength-value">10</span>
+        </div>
+        <div>
+            <button id="apply-force">Apply Force to All Rings</button>
+            <button id="apply-random">Apply Random Forces</button>
+        </div>
+    </div>
+
+    <!-- Include Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- Include Ammo.js -->
+    <script src="../../builds/ammo.js"></script>
+    
+    <!-- Include our game script -->
+    <script src="ammo_compound_torus_three.js"></script>
+
+</body>
+</html> 
