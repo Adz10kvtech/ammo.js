@@ -85,9 +85,35 @@
             <button id="apply-force">Apply Force to All Rings</button>
             <button id="apply-random">Apply Random Forces</button>
         </div>
-        <div>
+        <div style="margin-bottom: 10px;">
             <button id="drop-on-slope" style="background-color: #996633; color: white;">Drop Rings on Slope</button>
             <small>(or press 'S')</small>
+        </div>
+        
+        <hr style="margin: 15px 0; border-color: #aaa;">
+        
+        <h3 style="margin-top: 0;">Bubble Controls</h3>
+        <div style="margin-bottom: 15px;">
+            <div style="margin-bottom: 8px;">
+                <label for="bubble-x">X Position: </label>
+                <input type="range" id="bubble-x" min="-9" max="9" value="8" step="0.5" style="width: 140px;">
+                <span id="bubble-x-value">8</span>
+            </div>
+            <div style="margin-bottom: 8px;">
+                <label for="bubble-y">Y Position: </label>
+                <input type="range" id="bubble-y" min="-18" max="-12" value="-17" step="0.5" style="width: 140px;">
+                <span id="bubble-y-value">-17</span>
+            </div>
+            <div style="margin-bottom: 8px;">
+                <label for="bubble-z">Z Position: </label>
+                <input type="range" id="bubble-z" min="-2" max="2" value="-1" step="0.5" style="width: 140px;">
+                <span id="bubble-z-value">-1</span>
+            </div>
+        </div>
+        
+        <div>
+            <button id="pump-bubbles" style="background-color: #4c9ed9; color: white; padding: 8px 15px; font-weight: bold;">Pump Bubbles!</button>
+            <small>(or press 'B')</small>
         </div>
     </div>
 

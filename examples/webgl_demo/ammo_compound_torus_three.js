@@ -37,6 +37,16 @@ let fps = 0;
 let torusGeometries = [];
 let torusCompoundShape;
 
+// Add these global variables at the top of the file near other global declarations
+let activeBubbles = [];
+let bubbleLifetimes = [];
+const BUBBLE_LIFETIME = 4000; // 4 seconds in milliseconds
+
+// Add these global variables near the top with other globals
+let lastBubbleTime = 0;
+let bubbleFlowActive = false;
+let bubbleSpawnPosition = { x: 8, y: -17, z: -1 }; // Default spawn position
+
 // Wait for DOM to load and Ammo to initialize
 document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('start-button').addEventListener('click', startDemo);
@@ -233,7 +243,10 @@ function createSlope(Ammo) {
     
     // Create rigid body
     const mass = 0; // Static object
-    createRigidBody(Ammo, slopeMesh, slopeShape, mass, slopeTransform);
+    const body = createRigidBody(Ammo, slopeMesh, slopeShape, mass, slopeTransform);
+    
+    // Make the slope very slippery by setting a lower friction value
+    body.setFriction(0.05); // Much lower friction than the default 0.5
     
     return slopeMesh;
 }
@@ -591,17 +604,29 @@ function createBubble(Ammo) {
     // Define bubble parameters
     const bubbleCount = 8;
     const bubbleSizes = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.6, 0.5];
+    // Add some variety of colors for bubbles
+    const bubbleColors = [
+        0x88ccff, // Light blue
+        0xbbffdd, // Light green
+        0xffddbb, // Light orange
+        0xeeddff, // Light purple
+        0xffffff, // White
+        0xaaeeff, // Cyan
+        0xffddee, // Pink
+        0xeeffbb  // Light yellow
+    ];
     const bubbles = [];
     
     // Create multiple small bubbles
     for (let i = 0; i < bubbleCount; i++) {
-        // Randomly choose a size
+        // Initially place bubbles out of view - they'll be activated by the pump
         const size = bubbleSizes[i % bubbleSizes.length];
+        const color = bubbleColors[i % bubbleColors.length];
         
-        // Create bubble visual (transparent white sphere)
+        // Create bubble visual (transparent sphere with color)
         const bubbleGeometry = new THREE.SphereGeometry(size, 16, 16);
         const bubbleMaterial = new THREE.MeshPhongMaterial({
-            color: 0xffffff,
+            color: color,
             transparent: true,
             opacity: 0.3,
             shininess: 90,
@@ -610,13 +635,8 @@ function createBubble(Ammo) {
         
         const bubbleMesh = new THREE.Mesh(bubbleGeometry, bubbleMaterial);
         
-        // Randomly position bubble within tank bounds
-        const tankWidth = 18;
-        const x = (Math.random() - 0.5) * (tankWidth - size * 2); 
-        const y = tankY - tankHeight/4 - Math.random() * tankHeight/4; // Position in bottom half of tank
-        const z = (Math.random() - 0.5) * (tankDepth - size * 2);
-        
-        bubbleMesh.position.set(x, y, z);
+        // Position bubble out of view initially
+        bubbleMesh.position.set(0, -100, 0); // Hide below the scene
         scene.add(bubbleMesh);
         bubbles.push(bubbleMesh);
         
@@ -624,7 +644,7 @@ function createBubble(Ammo) {
         const bubbleShape = new Ammo.btSphereShape(size);
         const transform = new Ammo.btTransform();
         transform.setIdentity();
-        transform.setOrigin(new Ammo.btVector3(x, y, z));
+        transform.setOrigin(new Ammo.btVector3(0, -100, 0)); // Hide below the scene
         
         // Set very low mass for buoyancy
         const mass = 0.01;
@@ -639,12 +659,272 @@ function createBubble(Ammo) {
         
         // Decrease friction
         body.setFriction(0.1);
+        
+        // Store the active status
+        bubbleMesh.userData.isActive = false;
+        
+        // Store size for later use
+        bubbleMesh.userData.size = size;
+        
+        // Store color for later use
+        bubbleMesh.userData.color = color;
     }
     
-    // Store the first bubble for compatibility
+    // Store the bubbles in the global array
+    activeBubbles = bubbles;
+    
+    // Store the first bubble for compatibility with existing code
     bubble = bubbles[0];
     
     return bubbles;
+}
+
+// Function to create a bubble pop effect
+function createBubblePop(position, color, size) {
+    // Create a group of small spheres that expand outward
+    const particleCount = 8;
+    const particles = [];
+    
+    for (let i = 0; i < particleCount; i++) {
+        // Create a small sphere
+        const particleGeometry = new THREE.SphereGeometry(size * 0.2, 8, 8);
+        const particleMaterial = new THREE.MeshPhongMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.7,
+            shininess: 90
+        });
+        
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        particle.position.copy(position);
+        
+        // Set random direction vector
+        const direction = new THREE.Vector3(
+            Math.random() * 2 - 1,
+            Math.random() * 2 - 1,
+            Math.random() * 2 - 1
+        ).normalize();
+        
+        particle.userData.direction = direction;
+        particle.userData.speed = 0.2 + Math.random() * 0.3;
+        particle.userData.creationTime = Date.now();
+        particle.userData.lifetime = 500 + Math.random() * 300; // 0.5-0.8 seconds
+        
+        scene.add(particle);
+        particles.push(particle);
+    }
+    
+    // Animation to expand particles and fade them out
+    const animateParticles = function() {
+        const currentTime = Date.now();
+        let allDone = true;
+        
+        for (let i = 0; i < particles.length; i++) {
+            const particle = particles[i];
+            const elapsed = currentTime - particle.userData.creationTime;
+            
+            if (elapsed < particle.userData.lifetime) {
+                allDone = false;
+                
+                // Move particle outward
+                particle.position.add(
+                    particle.userData.direction.clone().multiplyScalar(particle.userData.speed)
+                );
+                
+                // Scale down and fade out
+                const progress = elapsed / particle.userData.lifetime;
+                particle.material.opacity = 0.7 * (1 - progress);
+                particle.scale.setScalar(1 - 0.5 * progress);
+            } else if (particle.parent) {
+                // Remove expired particles
+                scene.remove(particle);
+            }
+        }
+        
+        if (!allDone) {
+            requestAnimationFrame(animateParticles);
+        }
+    };
+    
+    // Start animation
+    animateParticles();
+}
+
+// Update the checkBubbleRingCollisions function to add visual effects
+function checkBubbleRingCollisions() {
+    // Get dispatcher from physics world
+    const dispatcher = physicsWorld.getDispatcher();
+    const numManifolds = dispatcher.getNumManifolds();
+    
+    // Check each contact manifold
+    for (let i = 0; i < numManifolds; i++) {
+        const contactManifold = dispatcher.getManifoldByIndexInternal(i);
+        const numContacts = contactManifold.getNumContacts();
+        
+        if (numContacts > 0) {
+            // Get the two objects in contact
+            const body0 = Ammo.castObject(contactManifold.getBody0(), Ammo.btRigidBody);
+            const body1 = Ammo.castObject(contactManifold.getBody1(), Ammo.btRigidBody);
+            
+            // Check if one is a bubble and one is a ring
+            const isBubble0 = activeBubbles.some(b => b.userData.physicsBody === body0);
+            const isRing0 = rigidBodies.some(r => r.userData.physicsBody === body0 && r !== bubble);
+            const isBubble1 = activeBubbles.some(b => b.userData.physicsBody === body1);
+            const isRing1 = rigidBodies.some(r => r.userData.physicsBody === body1 && r !== bubble);
+            
+            if ((isBubble0 && isRing1) || (isBubble1 && isRing0)) {
+                // Bubble-ring collision detected!
+                const bubbleBody = isBubble0 ? body0 : body1;
+                const ringBody = isBubble0 ? body1 : body0;
+                
+                // Apply an upward force to the ring
+                ringBody.activate();
+                ringBody.applyCentralForce(new Ammo.btVector3(
+                    (Math.random() - 0.5) * 30,  // Random horizontal component
+                    50 + Math.random() * 50,     // Strong upward force
+                    (Math.random() - 0.5) * 30   // Random horizontal component
+                ));
+                
+                // Deactivate the bubble (pop it)
+                const bubbleIndex = activeBubbles.findIndex(b => b.userData.physicsBody === bubbleBody);
+                if (bubbleIndex >= 0) {
+                    const bubbleMesh = activeBubbles[bubbleIndex];
+                    
+                    // Create pop effect before hiding the bubble
+                    createBubblePop(
+                        bubbleMesh.position.clone(),
+                        bubbleMesh.userData.color,
+                        bubbleMesh.userData.size
+                    );
+                    
+                    // Deactivate and hide the bubble
+                    bubbleMesh.userData.isActive = false;
+                    bubbleMesh.position.set(0, -100, 0); // Hide it
+                    const transform = bubbleBody.getWorldTransform();
+                    transform.setOrigin(new Ammo.btVector3(0, -100, 0));
+                    bubbleMesh.material.opacity = 0;
+                }
+            }
+        }
+    }
+}
+
+function activateBubbles() {
+    // Start a bubble flow that continues over time
+    bubbleFlowActive = true;
+    lastBubbleTime = 0; // Reset to start immediately
+    
+    // Call the bubble spawner function that will continue as long as flow is active
+    spawnBubblesInFlow();
+}
+
+// New function to handle continuous bubble spawning
+function spawnBubblesInFlow() {
+    // If flow is not active, stop spawning
+    if (!bubbleFlowActive) return;
+    
+    const currentTime = Date.now();
+    
+    // Only spawn a bubble every 150ms for a steady stream
+    if (currentTime - lastBubbleTime > 150) {
+        lastBubbleTime = currentTime;
+        
+        // Get the tank dimensions
+        const tankWidth = 18;
+        const tankDepth = 4;
+        const tankHeight = 40;
+        const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
+        
+        // Use the position from the sliders
+        // Convert from slider space to world space
+        const releaseX = bubbleSpawnPosition.x;
+        const releaseY = tankY + bubbleSpawnPosition.y; // Adjust to tank position
+        const releaseZ = bubbleSpawnPosition.z;
+        
+        // Find an inactive bubble
+        let spawnedBubble = false;
+        for (let i = 0; i < activeBubbles.length; i++) {
+            const bubble = activeBubbles[i];
+            
+            if (!bubble.userData.isActive) {
+                const size = bubble.userData.size;
+                
+                // Add small random variation to make it look natural
+                const x = releaseX + (Math.random() * 0.3 - 0.15);
+                const y = releaseY + (Math.random() * 0.3 - 0.15);
+                const z = releaseZ + (Math.random() * 0.3 - 0.15);
+                
+                // Move to position
+                bubble.position.set(x, y, z);
+                
+                // Update the physics body
+                const body = bubble.userData.physicsBody;
+                const worldTransform = body.getWorldTransform();
+                worldTransform.setOrigin(new Ammo.btVector3(x, y, z));
+                
+                // Calculate direction vector from spawn position to center of tank
+                const centerX = 0;
+                const centerY = tankY;
+                const centerZ = 0;
+                
+                const dirX = centerX - releaseX;
+                const dirY = Math.max(5, centerY - releaseY); // Always some upward component
+                const dirZ = centerZ - releaseZ;
+                
+                // Normalize the direction vector
+                const length = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+                const normX = dirX / length;
+                const normY = dirY / length;
+                const normZ = dirZ / length;
+                
+                // Apply a force in the calculated direction
+                body.activate();
+                
+                // Base force strength with small variation for natural look
+                const forceStrength = 8 + Math.random() * 2;
+                
+                // Apply force in the direction toward center with strong upward bias
+                body.applyCentralForce(new Ammo.btVector3(
+                    forceStrength * normX,
+                    forceStrength * normY * 1.5, // Extra upward force
+                    forceStrength * normZ
+                ));
+                
+                // Mark as active
+                bubble.userData.isActive = true;
+                
+                // Set bubble lifetime
+                bubbleLifetimes[i] = Date.now() + BUBBLE_LIFETIME;
+                
+                // Make bubble visible with animation
+                bubble.material.opacity = 0;
+                const startTime = Date.now();
+                const fadeIn = function() {
+                    const elapsed = Date.now() - startTime;
+                    if (elapsed < 200) {
+                        bubble.material.opacity = Math.min(0.7, elapsed / 200 * 0.7);
+                        requestAnimationFrame(fadeIn);
+                    } else {
+                        bubble.material.opacity = 0.7;
+                    }
+                };
+                fadeIn();
+                
+                spawnedBubble = true;
+                break;
+            }
+        }
+        
+        // Stop the flow if we've been active for 3 seconds
+        if (currentTime - (lastBubbleTime - 150) > 3000) {
+            bubbleFlowActive = false;
+        }
+    }
+    
+    // Continue the flow
+    if (bubbleFlowActive) {
+        requestAnimationFrame(spawnBubblesInFlow);
+    }
 }
 
 function createRigidBody(Ammo, threeObject, physicsShape, mass, transform, linearDamping = 0, angularDamping = 0) {
@@ -735,10 +1015,36 @@ function setupEventListeners() {
         dropRingsOnSlope();
     });
     
-    // Add keyboard shortcut - press 'S' to drop on slope
+    // Setup bubble position sliders
+    document.getElementById('bubble-x').addEventListener('input', function() {
+        const value = parseFloat(this.value);
+        document.getElementById('bubble-x-value').textContent = value;
+        bubbleSpawnPosition.x = value;
+    });
+    
+    document.getElementById('bubble-y').addEventListener('input', function() {
+        const value = parseFloat(this.value);
+        document.getElementById('bubble-y-value').textContent = value;
+        bubbleSpawnPosition.y = value;
+    });
+    
+    document.getElementById('bubble-z').addEventListener('input', function() {
+        const value = parseFloat(this.value);
+        document.getElementById('bubble-z-value').textContent = value;
+        bubbleSpawnPosition.z = value;
+    });
+    
+    // Add pump bubbles button
+    document.getElementById('pump-bubbles').addEventListener('click', function() {
+        activateBubbles();
+    });
+    
+    // Add keyboard shortcuts
     window.addEventListener('keydown', function(event) {
         if (event.key === 's' || event.key === 'S') {
             dropRingsOnSlope();
+        } else if (event.key === 'b' || event.key === 'B') {
+            activateBubbles();
         }
     });
 }
@@ -819,38 +1125,60 @@ function dropRingsOnSlope() {
 }
 
 function updatePhysics(deltaTime) {
-    // Similar to original implementation
+    // Step simulation
     deltaTime = deltaTime || 1/60;
-    
-    // Step the physics world with fixed settings like the original
     physicsWorld.stepSimulation(deltaTime, MAX_SUBSTEPS);
     
     // Update rigid bodies
-    for (let i = 0; i < rigidBodies.length; i++) {
+    for (let i = 0, il = rigidBodies.length; i < il; i++) {
         const objThree = rigidBodies[i];
         const objPhys = objThree.userData.physicsBody;
         const ms = objPhys.getMotionState();
-        
         if (ms) {
             ms.getWorldTransform(tmpTrans);
             const p = tmpTrans.getOrigin();
             const q = tmpTrans.getRotation();
-            
             objThree.position.set(p.x(), p.y(), p.z());
             objThree.quaternion.set(q.x(), q.y(), q.z(), q.w());
         }
     }
     
+    // Check for bubble lifetimes
+    const currentTime = Date.now();
+    let activeBubbleCount = 0;
+    
+    for (let i = 0; i < activeBubbles.length; i++) {
+        const bubble = activeBubbles[i];
+        
+        if (bubble.userData.isActive) {
+            activeBubbleCount++;
+            
+            // Check if bubble lifetime has expired
+            if (currentTime > bubbleLifetimes[i]) {
+                // Deactivate the bubble
+                bubble.userData.isActive = false;
+                bubble.position.set(0, -100, 0); // Hide it
+                const body = bubble.userData.physicsBody;
+                const transform = body.getWorldTransform();
+                transform.setOrigin(new Ammo.btVector3(0, -100, 0));
+                bubble.material.opacity = 0;
+            }
+        }
+    }
+    
+    // Check for bubble-ring collisions
+    checkBubbleRingCollisions();
+    
     // Calculate FPS
     frameCount++;
     
-    const currentTime = performance.now();
-    if (currentTime > lastFrameTime + 1000) {
-        fps = Math.round((frameCount * 1000) / (currentTime - lastFrameTime));
+    const currentFPSTime = performance.now();
+    if (currentFPSTime > lastFrameTime + 1000) {
+        fps = Math.round((frameCount * 1000) / (currentFPSTime - lastFrameTime));
         fpsElement.textContent = 'FPS: ' + fps;
         
         frameCount = 0;
-        lastFrameTime = currentTime;
+        lastFrameTime = currentFPSTime;
     }
 }
 
