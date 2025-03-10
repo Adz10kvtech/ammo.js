@@ -23,6 +23,7 @@ Ammo().then(function(Ammo) {
   var pegs = [];
   var smallBalls = []; // Small objects that can pass through holes
   var tankPanels = []; // Tank panels for the water ring game
+  var bubble = null;   // Bubble object for the pump mechanism
   
   // Set up ground
   var groundTransform = new Ammo.btTransform();
@@ -83,7 +84,7 @@ Ammo().then(function(Ammo) {
     var pinShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.15, 1.25, 0.15)); // Height 2.5 (half-height is 1.25)
     
     // Create the base shape (cylinder)
-    var baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(1.5, 0.25, 1.5)); // Radius 1.5, height 0.5 (half-height 0.25)
+    var baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(1.2, 0.25, 1.2)); // Reduced from 1.5 to 1.2 (20% smaller)
     
     // Set transforms for each shape
     var pinTransform = new Ammo.btTransform();
@@ -104,6 +105,37 @@ Ammo().then(function(Ammo) {
   // Create small balls that can pass through torus holes
   function createBallShape() {
     return new Ammo.btSphereShape(TORUS_RADIUS * 0.4); // Smaller than the hole
+  }
+
+  // Create bubble shape for pump mechanism
+  function createBubbleShape() {
+    return new Ammo.btSphereShape(2.0); // Same radius as in rendering
+  }
+
+  // Set up bubble for pump mechanism
+  function setupBubble() {
+    var bubbleShape = createBubbleShape();
+    var bubbleTransform = new Ammo.btTransform();
+    bubbleTransform.setIdentity();
+    
+    // Position bubble at bottom center of tank
+    bubbleTransform.setOrigin(new Ammo.btVector3(0, -15, 0));
+    
+    var mass = 0.1; // Light mass for buoyancy
+    var localInertia = new Ammo.btVector3(0, 0, 0);
+    bubbleShape.calculateLocalInertia(mass, localInertia);
+    
+    var myMotionState = new Ammo.btDefaultMotionState(bubbleTransform);
+    var rbInfo = new Ammo.btRigidBodyConstructionInfo(mass, myMotionState, bubbleShape, localInertia);
+    var body = new Ammo.btRigidBody(rbInfo);
+    
+    // Add water-like physics properties
+    body.setDamping(0.9, 0.9);   // High damping for water resistance
+    body.setRestitution(0.7);    // Bouncy
+    body.setFriction(0.1);       // Low friction in water
+    
+    dynamicsWorld.addRigidBody(body);
+    bubble = body;
   }
 
   function setupPegs() {
@@ -332,6 +364,7 @@ Ammo().then(function(Ammo) {
     // Create fixed pegs and small balls
     setupPegs();
     setupTank(); // Add the tank
+    setupBubble(); // Add the bubble
     
     resetPositions();
   }
@@ -384,6 +417,21 @@ Ammo().then(function(Ammo) {
   function readBulletTankPanel(i, object) {
     var body = tankPanels[i];
     body.getMotionState().getWorldTransform(transform);
+    var origin = transform.getOrigin();
+    object[0] = origin.x();
+    object[1] = origin.y();
+    object[2] = origin.z();
+    var rotation = transform.getRotation();
+    object[3] = rotation.x();
+    object[4] = rotation.y();
+    object[5] = rotation.z();
+    object[6] = rotation.w();
+  }
+
+  // Read bubble data
+  function readBubble(object) {
+    if (!bubble) return;
+    bubble.getMotionState().getWorldTransform(transform);
     var origin = transform.getOrigin();
     object[0] = origin.x();
     object[1] = origin.y();
@@ -451,6 +499,7 @@ Ammo().then(function(Ammo) {
       pegs: [],
       balls: [],
       tankPanels: [], // Add tankPanels to the data
+      bubble: [],     // Add bubble data
       currFPS: Math.round(1000/meanDt), 
       allFPS: Math.round(1000/meanDt2) 
     };
@@ -482,6 +531,9 @@ Ammo().then(function(Ammo) {
       readBulletTankPanel(i, object);
       data.tankPanels[i] = object;
     }
+    
+    // Read bubble data
+    readBubble(data.bubble);
 
     postMessage(data);
 

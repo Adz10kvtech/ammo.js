@@ -16,6 +16,7 @@
         var pegs = [];
         var smallBalls = [];
         var tankPanels = []; // Add tank panels array
+        var bubble; // Add bubble object
 
         var lastFPS = 0;
         var outElement = null;
@@ -276,6 +277,24 @@
           // Store tank panels in array
           tankPanels = [tankFront, tankBack, tankLeft, tankRight, tankTop, tankBottom];
 
+          // Create bubble (representing the pump's bubble)
+          var bubbleMaterial = new CubicVR.Material({
+            color: [1.0, 0.0, 0.0]   // Simple solid red
+          });
+
+          // Use a cube instead of a sphere for more reliable rendering
+          var bubbleMesh = new CubicVR.primitives.box({
+            size: 3.0,               // Size comparable to the sphere radius
+            material: bubbleMaterial
+          }).calcNormals().triangulateQuads().compile().clean();
+
+          // Position bubble in the center-bottom of the tank
+          var bubble = new CubicVR.SceneObject({ 
+            mesh: bubbleMesh, 
+            position: [0, -15, 0]    // Bottom of the tank
+          });
+          scene.bindSceneObject(bubble, true);
+
           // Worker
           if (physicsWorker) physicsWorker.terminate();
           physicsWorker = new Worker('worker_compound_torus.js');
@@ -353,6 +372,18 @@
                 quaternion.w = physicsObject[6];
                 renderObject.rotation = quaternion.toEuler();
               }
+            }
+            
+            // Update bubble
+            if (data.bubble && data.bubble.length >= 7 && bubble) {
+              bubble.position[0] = data.bubble[0];
+              bubble.position[1] = data.bubble[1];
+              bubble.position[2] = data.bubble[2];
+              quaternion.x = data.bubble[3];
+              quaternion.y = data.bubble[4];
+              quaternion.z = data.bubble[5];
+              quaternion.w = data.bubble[6];
+              bubble.rotation = quaternion.toEuler();
             }
             
             currFPS = data.currFPS;
