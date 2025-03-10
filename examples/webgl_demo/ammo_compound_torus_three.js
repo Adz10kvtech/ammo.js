@@ -177,29 +177,50 @@ function createFloor(Ammo) {
 }
 
 function createSlope(Ammo) {
-    // Slope dimensions
-    const slopeWidth = 40;
-    const slopeLength = 30;
-
-    const slopeAngle = Math.PI * 0.08; // About 15 degrees
+    // Get the tank's base position and dimensions
+    const tankHeight = 40;
+    const tankWidth = 14;
+    const tankDepth = 4;
+    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
+    
+    // Calculate tank bottom position - this is where we want to align the slope
+    const tankBottomY = tankY - (tankHeight - 6)/2 + 2;
+    
+    // Slope dimensions - make it longer on the horizontal plane
+    const slopeWidth = 15.5; // Long enough to reach from outside the tank
+    const slopeLength = tankDepth; // Match tank depth
+    const slopeHeight = 0.5; // Thin height
+    
+    // Gentler angle for better gameplay
+    const slopeAngle = Math.PI * 0.10; 
     
     // Create visual slope
-    const slopeGeometry = new THREE.BoxGeometry(slopeWidth, 2, slopeLength);
+    const slopeGeometry = new THREE.BoxGeometry(slopeWidth, slopeHeight, slopeLength);
     const slopeMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0x996633,  // Brown color
-        shininess: 1
+        color: 0xc0e8ff,  // Very light blue tint
+        transparent: true,
+        opacity: 0.3,
+        shininess: 90,     // More glossy/plastic look
+        specular: 0x666666 // Light specular highlight
     });
     const slopeMesh = new THREE.Mesh(slopeGeometry, slopeMaterial);
     
-    // Position and rotate the slope
-    slopeMesh.position.set(0, FLOOR_HEIGHT + 1, -40); // Position directly on the floor
-    slopeMesh.rotation.x = slopeAngle;
+    // Position the slope to the left (west) of the tank, aligned with the bottom
+    slopeMesh.position.set(
+        -tankWidth/7, // Position inside the tank, about 1/4 from the left side
+        tankBottomY, // Align with bottom of the tank
+        0 // Centered on Z-axis
+    );
+    
+    // Rotate around Y axis (for west to east orientation)
+    // Then apply Z rotation for the angle of the slope
+    slopeMesh.rotation.z = -slopeAngle; // Negative angle to slope upward from left to right
     
     scene.add(slopeMesh);
     
     // Create physics body for the slope
     // We'll use a box shape rotated to match the visual slope
-    const slopeShape = new Ammo.btBoxShape(new Ammo.btVector3(slopeWidth / 2, 1, slopeLength / 2));
+    const slopeShape = new Ammo.btBoxShape(new Ammo.btVector3(slopeWidth / 2, slopeHeight/2, slopeLength / 2));
     
     const slopeTransform = new Ammo.btTransform();
     slopeTransform.setIdentity();
@@ -207,7 +228,7 @@ function createSlope(Ammo) {
     
     // Apply the rotation to the physics body
     const q = new Ammo.btQuaternion();
-    q.setRotation(new Ammo.btVector3(1, 0, 0), slopeAngle);
+    q.setRotation(new Ammo.btVector3(0, 0, 1), -slopeAngle); // Rotate around Z axis
     slopeTransform.setRotation(q);
     
     // Create rigid body
@@ -754,26 +775,33 @@ function applyRandomForcesToToruses(maxStrength) {
 
 // Function to drop rings on the slope
 function dropRingsOnSlope() {
-    // Get the tank's vertical position
+    // Get the tank dimensions
     const tankHeight = 40;
-    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
+    const tankWidth = 18;
+    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
+    
+    // Calculate tank bottom position where the slope aligns
+    const tankBottomY = tankY - (tankHeight - 6)/2 - 1.5;
+    
+    // Slope dimensions and position
+    const slopeWidth = 30;
     
     // Activate each torus physics body
     for (let i = 0; i < toruses.length; i++) {
         const torus = toruses[i];
         const physicsBody = torus.userData.physicsBody;
         
-        // Position above the slope with random x-coordinate
-        const x = Math.random() * 30 - 15; // Range: (-15, 15)
-        const y = FLOOR_HEIGHT + 25; // Higher above the floor
-        const z = Math.random() * 20 - 60; // Range: (-60, -40) behind the tank on the slope
+        // Position rings at the far left of the slope (west end)
+        const x = -(tankWidth/2 + slopeWidth - 5); // Far left side of the slope
+        const y = tankBottomY + 5; // Above the slope
+        const z = (Math.random() - 0.5) * 3; // Small random variation in Z
         
         // Reset position
         const transform = new Ammo.btTransform();
         transform.setIdentity();
         transform.setOrigin(new Ammo.btVector3(x, y, z));
         
-        // Set rotation
+        // Set rotation - keep rings horizontal
         const quaternion = new Ammo.btQuaternion();
         quaternion.setRotation(new Ammo.btVector3(1, 0, 0), Math.PI / 2); // Horizontal orientation
         transform.setRotation(quaternion);
