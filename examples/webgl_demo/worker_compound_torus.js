@@ -22,6 +22,7 @@ Ammo().then(function(Ammo) {
   var bodies = [];
   var pegs = [];
   var smallBalls = []; // Small objects that can pass through holes
+  var tankPanels = []; // Tank panels for the water ring game
   
   // Set up ground
   var groundTransform = new Ammo.btTransform();
@@ -75,7 +76,7 @@ Ammo().then(function(Ammo) {
 
   // Create the peg shape (vertical cylinder)
   function createPegShape() {
-    return new Ammo.btCylinderShape(new Ammo.btVector3(0.15, 4.0, 0.15));
+    return new Ammo.btCylinderShape(new Ammo.btVector3(0.15, 10.0, 0.15)); // Height 20.0 (half-height is 10.0)
   }
 
   // Create small balls that can pass through torus holes
@@ -85,6 +86,7 @@ Ammo().then(function(Ammo) {
 
   function setupPegs() {
     var pegShape = createPegShape();
+    var tankHeight = 25; // Match the tank height from setupTank
     
     for (var i = 0; i < NUM_PEGS; i++) {
       var pegTransform = new Ammo.btTransform();
@@ -92,7 +94,12 @@ Ammo().then(function(Ammo) {
       
       // Position pegs evenly spaced in a row
       var x = (i - (NUM_PEGS/2)) * 4;
-      pegTransform.setOrigin(new Ammo.btVector3(x, 0, 0)); // Moved to z=0 (center)
+      
+      // Position at the bottom of the tank
+      // -tankHeight/2 is the bottom of the tank, then add 10.0 (half the peg height)
+      var y = -tankHeight/2 + 1.0;
+      
+      pegTransform.setOrigin(new Ammo.btVector3(x, y, 0)); // Now positioned at the bottom of the tank
       
       var mass = 0; // Static (fixed) object
       var localInertia = new Ammo.btVector3(0, 0, 0);
@@ -147,7 +154,7 @@ Ammo().then(function(Ammo) {
       
       // Position torus directly above the peg
       origin.setX(pegX);
-      origin.setY(10 + Math.floor((i-1)/NUM_PEGS) * 3); // Stack toruses if more than pegs
+      origin.setY(7 + Math.floor((i-1)/NUM_PEGS) * 2); // Increased from 10 to 20
       origin.setZ(0); // Centered on z-axis
       
       // Set rotation so the hole faces down (horizontal orientation)
@@ -171,11 +178,104 @@ Ammo().then(function(Ammo) {
       var pegX = (pegIndex - (NUM_PEGS/2)) * 4;
       
       origin.setX(pegX);
-      origin.setY(20); // Higher than toruses
+      origin.setY(30); // Increased from 20 to 30
       origin.setZ(0);
       
       body.activate();
     }
+  }
+
+  // Create a tank shape for water ring game
+  function createTankShape(width, height, depth) {
+    return new Ammo.btBoxShape(new Ammo.btVector3(width/2, height/2, depth/2));
+  }
+
+  // Set up tank for water ring game
+  function setupTank() {
+    var tankDepth = 4;  // Reduced from 8 to 4 (50% thinner)
+    var tankWidth = 24;  // Wide enough to cover all pegs with some margin
+    var tankHeight = 25;  // Much taller now (was 12)
+    var panelThickness = 0.05;
+    
+    // Create front panel
+    var frontShape = createTankShape(tankWidth, tankHeight, panelThickness);
+    var frontTransform = new Ammo.btTransform();
+    frontTransform.setIdentity();
+    frontTransform.setOrigin(new Ammo.btVector3(0, 0, tankDepth/2));
+    
+    var mass = 0; // Static object
+    var localInertia = new Ammo.btVector3(0, 0, 0);
+    var myMotionState = new Ammo.btDefaultMotionState(frontTransform);
+    var rbInfo = new Ammo.btRigidBodyConstructionInfo(mass, myMotionState, frontShape, localInertia);
+    var body = new Ammo.btRigidBody(rbInfo);
+    
+    dynamicsWorld.addRigidBody(body);
+    tankPanels.push(body);
+    
+    // Create back panel
+    var backShape = createTankShape(tankWidth, tankHeight, panelThickness);
+    var backTransform = new Ammo.btTransform();
+    backTransform.setIdentity();
+    backTransform.setOrigin(new Ammo.btVector3(0, 0, -tankDepth/2));
+    
+    myMotionState = new Ammo.btDefaultMotionState(backTransform);
+    rbInfo = new Ammo.btRigidBodyConstructionInfo(mass, myMotionState, backShape, localInertia);
+    body = new Ammo.btRigidBody(rbInfo);
+    
+    dynamicsWorld.addRigidBody(body);
+    tankPanels.push(body);
+    
+    // Create left panel
+    var leftShape = createTankShape(panelThickness, tankHeight, tankDepth);
+    var leftTransform = new Ammo.btTransform();
+    leftTransform.setIdentity();
+    leftTransform.setOrigin(new Ammo.btVector3(-tankWidth/2, 0, 0));
+    
+    myMotionState = new Ammo.btDefaultMotionState(leftTransform);
+    rbInfo = new Ammo.btRigidBodyConstructionInfo(mass, myMotionState, leftShape, localInertia);
+    body = new Ammo.btRigidBody(rbInfo);
+    
+    dynamicsWorld.addRigidBody(body);
+    tankPanels.push(body);
+    
+    // Create right panel
+    var rightShape = createTankShape(panelThickness, tankHeight, tankDepth);
+    var rightTransform = new Ammo.btTransform();
+    rightTransform.setIdentity();
+    rightTransform.setOrigin(new Ammo.btVector3(tankWidth/2, 0, 0));
+    
+    myMotionState = new Ammo.btDefaultMotionState(rightTransform);
+    rbInfo = new Ammo.btRigidBodyConstructionInfo(mass, myMotionState, rightShape, localInertia);
+    body = new Ammo.btRigidBody(rbInfo);
+    
+    dynamicsWorld.addRigidBody(body);
+    tankPanels.push(body);
+    
+    // Create top panel
+    var topShape = createTankShape(tankWidth, panelThickness, tankDepth);
+    var topTransform = new Ammo.btTransform();
+    topTransform.setIdentity();
+    topTransform.setOrigin(new Ammo.btVector3(0, tankHeight/2, 0));
+    
+    myMotionState = new Ammo.btDefaultMotionState(topTransform);
+    rbInfo = new Ammo.btRigidBodyConstructionInfo(mass, myMotionState, topShape, localInertia);
+    body = new Ammo.btRigidBody(rbInfo);
+    
+    dynamicsWorld.addRigidBody(body);
+    tankPanels.push(body);
+    
+    // Create bottom panel
+    var bottomShape = createTankShape(tankWidth, panelThickness, tankDepth);
+    var bottomTransform = new Ammo.btTransform();
+    bottomTransform.setIdentity();
+    bottomTransform.setOrigin(new Ammo.btVector3(0, -tankHeight/2, 0));
+    
+    myMotionState = new Ammo.btDefaultMotionState(bottomTransform);
+    rbInfo = new Ammo.btRigidBodyConstructionInfo(mass, myMotionState, bottomShape, localInertia);
+    body = new Ammo.btRigidBody(rbInfo);
+    
+    dynamicsWorld.addRigidBody(body);
+    tankPanels.push(body);
   }
 
   function startUp() {
@@ -205,6 +305,7 @@ Ammo().then(function(Ammo) {
 
     // Create fixed pegs and small balls
     setupPegs();
+    setupTank(); // Add the tank
     setupSmallBalls();
     
     resetPositions();
@@ -242,6 +343,21 @@ Ammo().then(function(Ammo) {
   
   function readBulletBall(i, object) {
     var body = smallBalls[i];
+    body.getMotionState().getWorldTransform(transform);
+    var origin = transform.getOrigin();
+    object[0] = origin.x();
+    object[1] = origin.y();
+    object[2] = origin.z();
+    var rotation = transform.getRotation();
+    object[3] = rotation.x();
+    object[4] = rotation.y();
+    object[5] = rotation.z();
+    object[6] = rotation.w();
+  }
+  
+  // Read tank panel data
+  function readBulletTankPanel(i, object) {
+    var body = tankPanels[i];
     body.getMotionState().getWorldTransform(transform);
     var origin = transform.getOrigin();
     object[0] = origin.x();
@@ -309,6 +425,7 @@ Ammo().then(function(Ammo) {
       objects: [], 
       pegs: [],
       balls: [],
+      tankPanels: [], // Add tankPanels to the data
       currFPS: Math.round(1000/meanDt), 
       allFPS: Math.round(1000/meanDt2) 
     };
@@ -333,6 +450,13 @@ Ammo().then(function(Ammo) {
       readBulletBall(i, object);
       data.balls[i] = object;
     }
+    
+    // Read tank panel data
+    for (var i = 0; i < tankPanels.length; i++) {
+      var object = [];
+      readBulletTankPanel(i, object);
+      data.tankPanels[i] = object;
+    }
 
     postMessage(data);
 
@@ -341,8 +465,62 @@ Ammo().then(function(Ammo) {
 
   var interval = null;
 
+  // Apply force to all rings
+  function applyForceToRings(forceVector) {
+    var force = new Ammo.btVector3(forceVector[0], forceVector[1], forceVector[2]);
+    
+    // Apply to each torus body (starting from index 1, as 0 is the ground)
+    for (var i = 1; i <= NUM; i++) {
+      if (i < bodies.length) {
+        var body = bodies[i];
+        
+        // Make sure the body is active
+        body.activate();
+        
+        // Apply central force
+        body.applyCentralForce(force);
+      }
+    }
+  }
+  
+  // Apply random forces to rings
+  function applyRandomForcesToRings(maxStrength) {
+    // Apply to each torus body (starting from index 1, as 0 is the ground)
+    for (var i = 1; i <= NUM; i++) {
+      if (i < bodies.length) {
+        var body = bodies[i];
+        
+        // Generate random force vector
+        var forceX = (Math.random() * 2 - 1) * maxStrength;
+        var forceY = (Math.random() * 2 - 1) * maxStrength;
+        var forceZ = (Math.random() * 2 - 1) * maxStrength;
+        
+        var force = new Ammo.btVector3(forceX, forceY, forceZ);
+        
+        // Make sure the body is active
+        body.activate();
+        
+        // Apply central force
+        body.applyCentralForce(force);
+      }
+    }
+  }
+
   onmessage = function(event) {
     var data = event.data;
+    
+    // Handle force commands
+    if (data.command === 'applyForce') {
+      applyForceToRings(data.force);
+      return;
+    }
+    
+    if (data.command === 'applyRandomForces') {
+      applyRandomForcesToRings(data.maxStrength);
+      return;
+    }
+    
+    // Handle initialization data
     NUM = data.num;
     TORUS_RADIUS = data.torusRadius;
     TUBE_RADIUS = data.tubeRadius;
@@ -363,7 +541,7 @@ Ammo().then(function(Ammo) {
     }
     if (interval) clearInterval(interval);
     interval = setInterval(mainLoop, 1000/60);
-  }
+  };
   
   postMessage({isReady: true});
 }); 

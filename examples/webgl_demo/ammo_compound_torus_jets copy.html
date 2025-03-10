@@ -15,7 +15,6 @@
         var toruses = [];
         var pegs = [];
         var smallBalls = [];
-        var tankPanels = []; // Add tank panels array
 
         var lastFPS = 0;
         var outElement = null;
@@ -117,19 +116,16 @@
           
           var pegMesh = new CubicVR.primitives.cylinder({
             radius: 0.15,
-            height: 20.0,  // Increased from 8.0 to 20.0
+            height: 8.0,
             material: pegMaterial
           }).calcNormals().triangulateQuads().compile().clean();
 
           // Create 5 pegs in a row
           for (var i = 0; i < 5; i++) {
             var x = (i - 2) * 4;  // Space them out
-            // Position pegs so they're sitting on the bottom of the tank
-            // tankHeight/2 is the bottom of the tank, then add half the peg height since cylinders are centered
-            var y = -tankHeight/2 + 10.0; // Half the peg height (20.0/2 = 10.0)
             pegs[i] = new CubicVR.SceneObject({ 
               mesh: pegMesh, 
-              position: [x, y, 0]  // Now positioned at the bottom of the tank
+              position: [x, 0, 0]  // Centered at z=0
             });
             scene.bindSceneObject(pegs[i], true);
           }
@@ -170,79 +166,6 @@
 
           var floor_ = new CubicVR.SceneObject({ mesh: floorMesh, position: [0, FLOOR_HEIGHT, 0] });
           scene.bindSceneObject(floor_, true);
-
-          // Create water tank for ring game
-          var tankMaterial = new CubicVR.Material({
-            color: [0.7, 0.85, 0.95, 0.6],  // Light blue with transparency
-            opacity: 0.6
-          });
-          
-          // Create tank front and back panels
-          var tankDepth = 4;  // Reduced from 8 to 4 (50% thinner)
-          var tankWidth = 24;  // Wide enough to cover all pegs with some margin
-          var tankHeight = 25;  // Much taller now (was 12)
-          
-          // Front panel
-          var tankFrontMesh = new CubicVR.primitives.box({
-            size: [tankWidth, tankHeight, 0.05],  // Thin panel
-            material: tankMaterial
-          }).calcNormals().triangulateQuads().compile().clean();
-          
-          var tankFront = new CubicVR.SceneObject({ 
-            mesh: tankFrontMesh, 
-            position: [0, 0, tankDepth/2]  // Slightly in front of center
-          });
-          scene.bindSceneObject(tankFront, true);
-          
-          // Back panel
-          var tankBack = new CubicVR.SceneObject({ 
-            mesh: tankFrontMesh, 
-            position: [0, 0, -tankDepth/2]  // Slightly behind center
-          });
-          scene.bindSceneObject(tankBack, true);
-          
-          // Create side panels
-          var tankSideMesh = new CubicVR.primitives.box({
-            size: [0.05, tankHeight, tankDepth],  // Thin panel
-            material: tankMaterial
-          }).calcNormals().triangulateQuads().compile().clean();
-          
-          // Left panel
-          var tankLeft = new CubicVR.SceneObject({ 
-            mesh: tankSideMesh, 
-            position: [-tankWidth/2, 0, 0]
-          });
-          scene.bindSceneObject(tankLeft, true);
-          
-          // Right panel
-          var tankRight = new CubicVR.SceneObject({ 
-            mesh: tankSideMesh, 
-            position: [tankWidth/2, 0, 0]
-          });
-          scene.bindSceneObject(tankRight, true);
-          
-          // Create top and bottom panels
-          var tankTopBottomMesh = new CubicVR.primitives.box({
-            size: [tankWidth, 0.05, tankDepth],  // Thin panel
-            material: tankMaterial
-          }).calcNormals().triangulateQuads().compile().clean();
-          
-          // Top panel
-          var tankTop = new CubicVR.SceneObject({ 
-            mesh: tankTopBottomMesh, 
-            position: [0, tankHeight/2, 0]
-          });
-          scene.bindSceneObject(tankTop, true);
-          
-          // Bottom panel
-          var tankBottom = new CubicVR.SceneObject({ 
-            mesh: tankTopBottomMesh, 
-            position: [0, -tankHeight/2, 0]
-          });
-          scene.bindSceneObject(tankBottom, true);
-          
-          // Store tank panels in array
-          tankPanels = [tankFront, tankBack, tankLeft, tankRight, tankTop, tankBottom];
 
           // Worker
           if (physicsWorker) physicsWorker.terminate();
@@ -307,22 +230,6 @@
               }
             }
             
-            // Update tank panels
-            if (data.tankPanels) {
-              for (var i = 0; i < data.tankPanels.length && i < tankPanels.length; i++) {
-                var physicsObject = data.tankPanels[i];
-                var renderObject = tankPanels[i];
-                renderObject.position[0] = physicsObject[0];
-                renderObject.position[1] = physicsObject[1];
-                renderObject.position[2] = physicsObject[2];
-                quaternion.x = physicsObject[3];
-                quaternion.y = physicsObject[4];
-                quaternion.z = physicsObject[5];
-                quaternion.w = physicsObject[6];
-                renderObject.rotation = quaternion.toEuler();
-              }
-            }
-            
             currFPS = data.currFPS;
             allFPS = data.allFPS;
           };
@@ -334,55 +241,6 @@
             var dt = timer.getLastUpdateSeconds();
             scene.render();
             showFPS();
-          });
-          
-          // Setup force control UI
-          document.getElementById('force-strength').addEventListener('input', function() {
-            document.getElementById('strength-value').textContent = this.value;
-          });
-          
-          document.getElementById('apply-force').addEventListener('click', function() {
-            var direction = document.getElementById('force-direction').value;
-            var strength = parseInt(document.getElementById('force-strength').value);
-            
-            // Convert direction to vector
-            var forceVector = [0, 0, 0];
-            switch(direction) {
-              case 'up':
-                forceVector = [0, strength, 0];
-                break;
-              case 'down':
-                forceVector = [0, -strength, 0];
-                break;
-              case 'left':
-                forceVector = [-strength, 0, 0];
-                break;
-              case 'right':
-                forceVector = [strength, 0, 0];
-                break;
-              case 'forward':
-                forceVector = [0, 0, -strength];
-                break;
-              case 'backward':
-                forceVector = [0, 0, strength];
-                break;
-            }
-            
-            // Send force command to worker
-            physicsWorker.postMessage({
-              command: 'applyForce',
-              force: forceVector
-            });
-          });
-          
-          document.getElementById('apply-random').addEventListener('click', function() {
-            var strength = parseInt(document.getElementById('force-strength').value);
-            
-            // Send random force command to worker
-            physicsWorker.postMessage({
-              command: 'applyRandomForces',
-              maxStrength: strength
-            });
           });
         }
       </script>
@@ -411,31 +269,6 @@
         <div id="during">
           <div>Physics FPS (current / stable): <input type="text" id="out" readonly="1" size="7"></div>
           <div id="postdiv"></div>
-          
-          <!-- Force controls for rings -->
-          <div id="force-controls" style="margin-top: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px; display: inline-block;">
-            <h3 style="margin-top: 0;">Ring Force Controls</h3>
-            <div style="margin-bottom: 10px;">
-              <label for="force-direction">Direction:</label>
-              <select id="force-direction">
-                <option value="up">Up</option>
-                <option value="down">Down</option>
-                <option value="left">Left</option>
-                <option value="right">Right</option>
-                <option value="forward">Forward</option>
-                <option value="backward">Backward</option>
-              </select>
-            </div>
-            <div style="margin-bottom: 10px;">
-              <label for="force-strength">Strength:</label>
-              <input type="range" id="force-strength" min="1" max="1250" value="10" style="width: 150px;">
-              <span id="strength-value">10</span>
-            </div>
-            <div>
-              <button id="apply-force">Apply Force to All Rings</button>
-              <button id="apply-random">Apply Random Forces</button>
-            </div>
-          </div>
         </div>
         <p>
         This demo shows compound toruses with real holes. The orange balls are small enough to pass through 
