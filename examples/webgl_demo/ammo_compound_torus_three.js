@@ -40,12 +40,19 @@ let torusCompoundShape;
 // Add these global variables at the top of the file near other global declarations
 let activeBubbles = [];
 let bubbleLifetimes = [];
-const BUBBLE_LIFETIME = 4000; // 4 seconds in milliseconds
+const BUBBLE_LIFETIME = 2500; // All bubbles last 2.5 seconds
 
 // Add these global variables near the top with other globals
 let lastBubbleTime = 0;
 let bubbleFlowActive = false;
 let bubbleSpawnPosition = { x: 8, y: -17, z: -1 }; // Default spawn position
+let bubblePower = 10; // Default bubble power (will be controlled by slider)
+let isPumpButtonHeld = false; // Track if pump button is being held
+const MAX_PUMP_HOLD_TIME = 5000; // Maximum pump hold time in milliseconds (5 seconds)
+let pumpStartTime = 0; // When the pump button was pressed
+const BUBBLE_SPAWN_INTERVAL = 30; // Spawn bubbles more frequently (33 per second)
+const PEG_DETECTION_DISTANCE = 0.5; // Distance to detect if a ring is on a peg
+const PEG_STABILITY_CHECK_INTERVAL = 500; // Check if rings are on pegs every 500ms
 
 // Wait for DOM to load and Ammo to initialize
 document.addEventListener('DOMContentLoaded', function() {
@@ -190,7 +197,7 @@ function createSlope(Ammo) {
     // Get the tank's base position and dimensions
     const tankHeight = 40;
     const tankWidth = 14;
-    const tankDepth = 4;
+    const tankDepth = 2.8; // Updated to match new tank depth
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
     
     // Calculate tank bottom position - this is where we want to align the slope
@@ -252,27 +259,28 @@ function createSlope(Ammo) {
 }
 
 function createTank(Ammo) {
-    const tankDepth = 4;  // Keep same depth
-    const tankWidth = 18;  // Slightly narrower for toy-like proportions
-    const tankHeight = 40;  // Keep the same height
+    // Define tank dimensions
+    const tankWidth = 18;
+    const tankHeight = 40;
+    // Reduce the tank depth by 30%
+    const tankDepth = 2.8; // Was 4, reduced by 30%
     const panelThickness = 0.05;
     
-    // Create materials
-    
-    // Clear plastic material for main tank body
-    const tankClearMaterial = new THREE.MeshPhongMaterial({
-        color: 0xc0e8ff, // Very light blue tint
-        transparent: true, 
+    // Create materials for the tank - transparent plastic for sides
+    const tankClearMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0xffffff,  // White base for transparent material
+        transparent: true,
         opacity: 0.2,
-        shininess: 90, // More glossy/plastic look
-        specular: 0x666666 // Light specular highlight
+        shininess: 100,
+        specular: 0x666666,
+        side: THREE.DoubleSide // Render both sides of geometry
     });
     
-    // Red plastic material for top and bottom
-    const tankRedMaterial = new THREE.MeshPhongMaterial({
+    // Red plastic for top and bottom
+    const tankRedMaterial = new THREE.MeshPhongMaterial({ 
         color: 0xdd1111, // Bright red
         shininess: 70,
-        specular: 0x666666 // Light specular highlight
+        specular: 0x666666
     });
     
     // Position tank on the floor
@@ -316,21 +324,6 @@ function createTank(Ammo) {
     baseTransform.setIdentity();
     baseTransform.setOrigin(new Ammo.btVector3(baseMesh.position.x, baseMesh.position.y, baseMesh.position.z));
     createRigidBody(Ammo, baseMesh, baseShape, 0, baseTransform);
-    
-    // Add control knob on the right side
-    const knobGeometry = new THREE.CylinderGeometry(1.5, 1.5, 1, 16);
-    const knobMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0xeeeeee, // Off-white 
-        shininess: 80
-    });
-    const knobMesh = new THREE.Mesh(knobGeometry, knobMaterial);
-    // Rotate to make cylinder horizontal
-    knobMesh.rotation.z = Math.PI/2;
-    knobMesh.position.set(tankWidth/2 + 1.5, tankY - (tankHeight - 6)/2 - 2.5, 0);
-    scene.add(knobMesh);
-    
-    // Round the edges of the tank by adding cylindrical edge pieces
-    addRoundedEdges(Ammo, tankWidth, tankDepth, tankHeight, tankClearMaterial, tankY);
 }
 
 function createTankPanel(Ammo, material, dimensions, position) {
@@ -383,7 +376,7 @@ function addRoundedEdges(Ammo, width, depth, height, material, tankY) {
 
 function createPegs(Ammo) {
     // Get the tank's vertical position
-    const tankDepth = 4;
+    const tankDepth = 2.8; // Updated to match new tank depth
     const tankHeight = 40;
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
     
@@ -391,9 +384,6 @@ function createPegs(Ammo) {
     const pegColors = [
         0xff3333, // Red
         0x33ff33, // Green
-        0x3333ff, // Blue
-        0xffff33, // Yellow
-        0xff33ff  // Purple
     ];
     
     // Red plastic for bases (same as tank base)
@@ -409,12 +399,18 @@ function createPegs(Ammo) {
     // Add rounded tops to pins
     const pinCapGeometry = new THREE.SphereGeometry(0.15, 8, 8);
     
-    // Create shared compound shape for physics
-    const compoundShape = createPegCompoundShape(Ammo);
-    
-    // Create 5 pegs in a row
-    for (let i = 0; i < 5; i++) {
-        const x = (i - 2) * 3;  // Space them closer for the toy look
+    // Create 2 pegs with staggered heights
+    for (let i = 0; i < 2; i++) {
+        // Position the pegs - move the green peg (i=1) 2 units to the left
+        let x = 0;
+        if (i === 0) {
+            x = -5; // Red peg position unchanged
+        } else {
+            x = 3; // Green peg moved from 5 to 3 (2 units left)
+        }
+        
+        // Stagger the heights - one higher, one lower
+        const heightOffset = (i === 0) ? -4 : 2; // First peg lower, second peg higher
         
         // Create material for this peg with matching color
         const pegMaterial = new THREE.MeshPhongMaterial({ 
@@ -431,62 +427,61 @@ function createPegs(Ammo) {
         
         // Create parent group
         const pegGroup = new THREE.Group();
-        pegGroup.position.set(x, tankY, 0);  // Position relative to tank's Y position
+        pegGroup.position.set(x, tankY + heightOffset, 0);  // Position with height offset
         scene.add(pegGroup);
         pegs.push(pegGroup);
         
-        // Create pin part
-        const pinMesh = new THREE.Mesh(pinGeometry, pegMaterial);
+        // Create pin part - adjust height based on staggering
+        const pinLength = 2.5 + (i === 0 ? -0.5 : 1); // First peg shorter, second peg longer
+        const customPinGeometry = new THREE.CylinderGeometry(0.15, 0.15, pinLength, 8);
+        
+        const pinMesh = new THREE.Mesh(customPinGeometry, pegMaterial);
         pinMesh.position.set(0, 2.05, 0);
         pegGroup.add(pinMesh);
         
         // Add rounded cap at the top of each pin
         const pinCapMesh = new THREE.Mesh(pinCapGeometry, pegMaterial);
-        pinCapMesh.position.set(0, 3.4, 0); // Position at top of pin
+        pinCapMesh.position.set(0, 2.05 + pinLength/2, 0); // Position at top of pin
         pegGroup.add(pinCapMesh);
         
         // Create base part - flat disc
         const baseGeometry = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16); // Smaller, flatter base
-        const baseMesh = new THREE.Mesh(baseGeometry, pegMaterial); // Use same colored material for base
+        const baseMesh = new THREE.Mesh(baseGeometry, pegMaterial);
         baseMesh.position.set(0, 0.3, 0); // Lower base 
         pegGroup.add(baseMesh);
+        
+        // Create a custom compound shape for this particular peg
+        const compoundShape = new Ammo.btCompoundShape();
+        
+        // Add pin shape - vertical cylinder with adjusted height
+        const pinShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.15, pinLength/2, 0.15)); // Half-height
+        const pinTransform = new Ammo.btTransform();
+        pinTransform.setIdentity();
+        pinTransform.setOrigin(new Ammo.btVector3(0, 2.05, 0));
+        compoundShape.addChildShape(pinTransform, pinShape);
+        
+        // Add pin cap - sphere at top
+        const capShape = new Ammo.btSphereShape(0.15);
+        const capTransform = new Ammo.btTransform();
+        capTransform.setIdentity();
+        capTransform.setOrigin(new Ammo.btVector3(0, 2.05 + pinLength/2, 0));
+        compoundShape.addChildShape(capTransform, capShape);
+        
+        // Add base shape - flatter cylinder
+        const baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.8, 0.1, 0.8)); // Smaller, flatter base
+        const baseTransform = new Ammo.btTransform();
+        baseTransform.setIdentity();
+        baseTransform.setOrigin(new Ammo.btVector3(0, 0.3, 0));
+        compoundShape.addChildShape(baseTransform, baseShape);
         
         // Create rigid body
         const transform = new Ammo.btTransform();
         transform.setIdentity();
-        transform.setOrigin(new Ammo.btVector3(x, tankY, 0));
+        transform.setOrigin(new Ammo.btVector3(x, tankY + heightOffset, 0));
         
         const mass = 0; // static object
         createRigidBody(Ammo, pegGroup, compoundShape, mass, transform);
     }
-}
-
-// Create a shared compound shape for all pegs
-function createPegCompoundShape(Ammo) {
-    const compoundShape = new Ammo.btCompoundShape();
-    
-    // Add pin shape - vertical cylinder
-    const pinShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.15, 1.25, 0.15)); // Half-height is 1.25
-    const pinTransform = new Ammo.btTransform();
-    pinTransform.setIdentity();
-    pinTransform.setOrigin(new Ammo.btVector3(0, 2.05, 0));
-    compoundShape.addChildShape(pinTransform, pinShape);
-    
-    // Add pin cap - sphere at top
-    const capShape = new Ammo.btSphereShape(0.15);
-    const capTransform = new Ammo.btTransform();
-    capTransform.setIdentity();
-    capTransform.setOrigin(new Ammo.btVector3(0, 3.4, 0));
-    compoundShape.addChildShape(capTransform, capShape);
-    
-    // Add base shape - flatter cylinder
-    const baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.8, 0.1, 0.8)); // Smaller, flatter base
-    const baseTransform = new Ammo.btTransform();
-    baseTransform.setIdentity();
-    baseTransform.setOrigin(new Ammo.btVector3(0, 0.3, 0));
-    compoundShape.addChildShape(baseTransform, baseShape);
-    
-    return compoundShape;
 }
 
 function createToruses(Ammo, count) {
@@ -597,29 +592,43 @@ function createCompoundTorusShape(Ammo) {
 
 function createBubble(Ammo) {
     // Get the tank's vertical position
-    const tankDepth = 4;
+    const tankDepth = 2.8; // Updated to match new tank depth
     const tankHeight = 40;
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
     
     // Define bubble parameters
-    const bubbleCount = 8;
-    const bubbleSizes = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.6, 0.5];
-    // Add some variety of colors for bubbles
+    const bubbleCount = 16; // Increased for more consistent stream
+    // Use consistent small sizes for water-like bubbles
+    const bubbleSizes = [
+        0.25, 0.25, 0.25, 0.25,   // Very small bubbles
+        0.3, 0.3, 0.3, 0.3,       // Small bubbles
+        0.35, 0.35, 0.35, 0.35,   // Medium bubbles
+        0.4, 0.4, 0.4, 0.4        // Slightly larger bubbles
+    ];
+    
+    // Use mostly water-blue colors with occasional white for realism
     const bubbleColors = [
         0x88ccff, // Light blue
-        0xbbffdd, // Light green
-        0xffddbb, // Light orange
-        0xeeddff, // Light purple
-        0xffffff, // White
-        0xaaeeff, // Cyan
-        0xffddee, // Pink
-        0xeeffbb  // Light yellow
+        0x66bbff, // Medium blue
+        0x77ccff, // Blue
+        0xaaddff, // Pale blue
+        0x99ccff, // Sky blue
+        0xbbddff, // Very light blue
+        0xffffff, // White (for occasional variation)
+        0xaaddff, // Pale blue
+        0x88ccff, // Light blue
+        0x66bbff, // Medium blue
+        0x77ccff, // Blue
+        0xaaddff, // Pale blue
+        0x99ccff, // Sky blue
+        0xbbddff, // Very light blue
+        0xffffff, // White (for occasional variation)
+        0xaaddff  // Pale blue
     ];
     const bubbles = [];
     
-    // Create multiple small bubbles
+    // Create multiple bubbles for water stream
     for (let i = 0; i < bubbleCount; i++) {
-        // Initially place bubbles out of view - they'll be activated by the pump
         const size = bubbleSizes[i % bubbleSizes.length];
         const color = bubbleColors[i % bubbleColors.length];
         
@@ -628,7 +637,7 @@ function createBubble(Ammo) {
         const bubbleMaterial = new THREE.MeshPhongMaterial({
             color: color,
             transparent: true,
-            opacity: 0.3,
+            opacity: 0.6,         // Higher base opacity for water-like effect
             shininess: 90,
             specular: 0x666666
         });
@@ -646,18 +655,16 @@ function createBubble(Ammo) {
         transform.setIdentity();
         transform.setOrigin(new Ammo.btVector3(0, -100, 0)); // Hide below the scene
         
-        // Set very low mass for buoyancy
-        const mass = 0.01;
-        const linearDamping = 0.8; // Water-like damping
+        // All bubbles have identical physical properties
+        const mass = 0.01;            // Low consistent mass
+        const linearDamping = 0.2;    // Low damping for consistent flow
         const angularDamping = 0.2;
         
         // Create rigid body
         const body = createRigidBody(Ammo, bubbleMesh, bubbleShape, mass, transform, linearDamping, angularDamping);
         
-        // Increase restitution (bounciness)
-        body.setRestitution(0.8);
-        
-        // Decrease friction
+        // Same physics properties for consistent behavior
+        body.setRestitution(0.7);
         body.setFriction(0.1);
         
         // Store the active status
@@ -750,7 +757,130 @@ function createBubblePop(position, color, size) {
     animateParticles();
 }
 
-// Update the checkBubbleRingCollisions function to add visual effects
+// Completely rewrite the bubble spawning function for consistent water-like stream
+function spawnBubblesInFlow() {
+    // If flow is not active, stop spawning
+    if (!bubbleFlowActive) return;
+    
+    const currentTime = Date.now();
+    
+    // Check if we've exceeded the maximum hold time
+    if (isPumpButtonHeld && currentTime - pumpStartTime > MAX_PUMP_HOLD_TIME) {
+        // Stop the flow if max hold time is reached
+        bubbleFlowActive = false;
+        return;
+    }
+    
+    // If button is no longer held
+    if (!isPumpButtonHeld && currentTime - pumpStartTime > 100) {
+        // Stop the flow when button is released
+        bubbleFlowActive = false;
+        return;
+    }
+    
+    // Spawn bubbles on regular intervals
+    if (currentTime - lastBubbleTime > BUBBLE_SPAWN_INTERVAL) {
+        lastBubbleTime = currentTime;
+        
+        // Get the tank dimensions
+        const tankWidth = 18;
+        const tankDepth = 2.8; // Updated to match new tank depth
+        const tankHeight = 40;
+        const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
+        
+        // Use the position from the sliders with minimal variance
+        const releaseX = bubbleSpawnPosition.x;
+        const releaseY = tankY + bubbleSpawnPosition.y;
+        const releaseZ = bubbleSpawnPosition.z;
+        
+        // Try to find an inactive bubble
+        let spawnedBubble = false;
+        for (let i = 0; i < activeBubbles.length; i++) {
+            const bubble = activeBubbles[i];
+            
+            if (!bubble.userData.isActive) {
+                const size = bubble.userData.size;
+                
+                // Very minimal position variance - creates a tight stream
+                // Will still look natural due to physics interactions but follow a consistent path
+                const variance = 0.03; // Very small variance
+                const x = releaseX + (Math.random() * variance * 2 - variance);
+                const y = releaseY + (Math.random() * variance * 2 - variance);
+                const z = releaseZ + (Math.random() * variance * 2 - variance);
+                
+                // Position bubble
+                bubble.position.set(x, y, z);
+                
+                // Update physics body position
+                const body = bubble.userData.physicsBody;
+                const worldTransform = body.getWorldTransform();
+                worldTransform.setOrigin(new Ammo.btVector3(x, y, z));
+                
+                // Calculate a water-like trajectory - a gentle arc toward the center-top
+                // Use a fixed destination point for consistency
+                const targetX = 0; // Center of tank
+                const targetY = tankY + tankHeight/3; // About 1/3 up the tank
+                const targetZ = 0; // Center of tank
+                
+                // Direction vector toward target (the water arc)
+                const dirX = targetX - releaseX;
+                const dirY = targetY - releaseY;
+                const dirZ = targetZ - releaseZ;
+                
+                // Normalize for consistent force
+                const length = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+                const normX = dirX / length;
+                const normY = dirY / length;
+                const normZ = dirZ / length;
+                
+                // Activate bubble physics
+                body.activate();
+                
+                // Apply consistent force modified only by power slider
+                // No randomness in the base force for predictable water stream
+                const baseForce = 8; // Constant base force
+                const powerFactor = bubblePower / 10; // Power slider effect
+                
+                // Apply force in consistent arc trajectory
+                body.applyCentralForce(new Ammo.btVector3(
+                    baseForce * normX * powerFactor,
+                    baseForce * normY * 2.2 * powerFactor, // Stronger upward component for nice arc
+                    baseForce * normZ * powerFactor
+                ));
+                
+                // Mark as active
+                bubble.userData.isActive = true;
+                
+                // Set bubble lifetime
+                bubbleLifetimes[i] = currentTime + BUBBLE_LIFETIME;
+                
+                // Make bubble visible immediately with a slight fade-in
+                bubble.material.opacity = 0;
+                const startTime = Date.now();
+                const fadeIn = function() {
+                    const elapsed = Date.now() - startTime;
+                    if (elapsed < 100) { // Faster fade-in (100ms)
+                        bubble.material.opacity = Math.min(0.6, elapsed / 100 * 0.6);
+                        requestAnimationFrame(fadeIn);
+                    } else {
+                        bubble.material.opacity = 0.6;
+                    }
+                };
+                fadeIn();
+                
+                spawnedBubble = true;
+                break;
+            }
+        }
+    }
+    
+    // Continue the flow if active
+    if (bubbleFlowActive) {
+        requestAnimationFrame(spawnBubblesInFlow);
+    }
+}
+
+// Also update the bubble-ring collision function for consistency
 function checkBubbleRingCollisions() {
     // Get dispatcher from physics world
     const dispatcher = physicsWorld.getDispatcher();
@@ -777,18 +907,49 @@ function checkBubbleRingCollisions() {
                 const bubbleBody = isBubble0 ? body0 : body1;
                 const ringBody = isBubble0 ? body1 : body0;
                 
-                // Apply an upward force to the ring
-                ringBody.activate();
-                ringBody.applyCentralForce(new Ammo.btVector3(
-                    (Math.random() - 0.5) * 30,  // Random horizontal component
-                    50 + Math.random() * 50,     // Strong upward force
-                    (Math.random() - 0.5) * 30   // Random horizontal component
-                ));
+                // Get the ring mesh to check if it's on a peg
+                const ringIndex = rigidBodies.findIndex(r => r.userData.physicsBody === ringBody);
+                const ringMesh = ringIndex >= 0 ? rigidBodies[ringIndex] : null;
                 
-                // Deactivate the bubble (pop it)
+                // Get the bubble to determine its size for scaling force
                 const bubbleIndex = activeBubbles.findIndex(b => b.userData.physicsBody === bubbleBody);
-                if (bubbleIndex >= 0) {
-                    const bubbleMesh = activeBubbles[bubbleIndex];
+                const bubbleMesh = bubbleIndex >= 0 ? activeBubbles[bubbleIndex] : null;
+                
+                if (bubbleIndex >= 0 && bubbleMesh) {
+                    // Check if the ring is on a peg
+                    const isOnPeg = ringMesh && ringMesh.userData.isOnPeg;
+                    
+                    // Log when a bubble hits a ring on a peg
+                    if (isOnPeg) {
+                        console.log(`Bubble hit Ring #${ringIndex} which is on a peg! Applying reduced force.`);
+                    }
+                    
+                    const bubbleSize = bubbleMesh.userData.size;
+                    
+                    // For water-like impact, use consistent forces with less randomness
+                    const sizeMultiplier = bubbleSize * 3.0; // Scale impact by size
+                    const powerFactor = bubblePower / 10; // Convert slider value to a multiplier (10 is baseline)
+                    
+                    // Check if the ring is on a peg to apply reduced force
+                    const bubbleResistance = (ringMesh && ringMesh.userData.isOnPeg) ? 
+                        (ringMesh.userData.bubbleResistance || 0.3) : 1.0;
+                    
+                    // Apply a more consistent upward force to the ring
+                    ringBody.activate();
+                    
+                    // Less horizontal randomness, more consistent upward force
+                    ringBody.applyCentralForce(new Ammo.btVector3(
+                        (Math.random() * 0.6 - 0.3) * 80 * sizeMultiplier * powerFactor * bubbleResistance,  // Reduced horizontal randomness
+                        (90 + Math.random() * 30) * sizeMultiplier * powerFactor * bubbleResistance,         // More consistent upward force
+                        (Math.random() * 0.6 - 0.3) * 80 * sizeMultiplier * powerFactor * bubbleResistance   // Reduced horizontal randomness
+                    ));
+                    
+                    // Reduced spin for more realistic water physics
+                    ringBody.applyTorqueImpulse(new Ammo.btVector3(
+                        (Math.random() - 0.5) * 3 * powerFactor * bubbleResistance,
+                        (Math.random() - 0.5) * 3 * powerFactor * bubbleResistance,
+                        (Math.random() - 0.5) * 3 * powerFactor * bubbleResistance
+                    ));
                     
                     // Create pop effect before hiding the bubble
                     createBubblePop(
@@ -810,121 +971,12 @@ function checkBubbleRingCollisions() {
 }
 
 function activateBubbles() {
-    // Start a bubble flow that continues over time
+    // Start a bubble flow
     bubbleFlowActive = true;
     lastBubbleTime = 0; // Reset to start immediately
     
-    // Call the bubble spawner function that will continue as long as flow is active
+    // Start spawning bubbles
     spawnBubblesInFlow();
-}
-
-// New function to handle continuous bubble spawning
-function spawnBubblesInFlow() {
-    // If flow is not active, stop spawning
-    if (!bubbleFlowActive) return;
-    
-    const currentTime = Date.now();
-    
-    // Only spawn a bubble every 150ms for a steady stream
-    if (currentTime - lastBubbleTime > 150) {
-        lastBubbleTime = currentTime;
-        
-        // Get the tank dimensions
-        const tankWidth = 18;
-        const tankDepth = 4;
-        const tankHeight = 40;
-        const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
-        
-        // Use the position from the sliders
-        // Convert from slider space to world space
-        const releaseX = bubbleSpawnPosition.x;
-        const releaseY = tankY + bubbleSpawnPosition.y; // Adjust to tank position
-        const releaseZ = bubbleSpawnPosition.z;
-        
-        // Find an inactive bubble
-        let spawnedBubble = false;
-        for (let i = 0; i < activeBubbles.length; i++) {
-            const bubble = activeBubbles[i];
-            
-            if (!bubble.userData.isActive) {
-                const size = bubble.userData.size;
-                
-                // Add small random variation to make it look natural
-                const x = releaseX + (Math.random() * 0.3 - 0.15);
-                const y = releaseY + (Math.random() * 0.3 - 0.15);
-                const z = releaseZ + (Math.random() * 0.3 - 0.15);
-                
-                // Move to position
-                bubble.position.set(x, y, z);
-                
-                // Update the physics body
-                const body = bubble.userData.physicsBody;
-                const worldTransform = body.getWorldTransform();
-                worldTransform.setOrigin(new Ammo.btVector3(x, y, z));
-                
-                // Calculate direction vector from spawn position to center of tank
-                const centerX = 0;
-                const centerY = tankY;
-                const centerZ = 0;
-                
-                const dirX = centerX - releaseX;
-                const dirY = Math.max(5, centerY - releaseY); // Always some upward component
-                const dirZ = centerZ - releaseZ;
-                
-                // Normalize the direction vector
-                const length = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
-                const normX = dirX / length;
-                const normY = dirY / length;
-                const normZ = dirZ / length;
-                
-                // Apply a force in the calculated direction
-                body.activate();
-                
-                // Base force strength with small variation for natural look
-                const forceStrength = 8 + Math.random() * 2;
-                
-                // Apply force in the direction toward center with strong upward bias
-                body.applyCentralForce(new Ammo.btVector3(
-                    forceStrength * normX,
-                    forceStrength * normY * 1.5, // Extra upward force
-                    forceStrength * normZ
-                ));
-                
-                // Mark as active
-                bubble.userData.isActive = true;
-                
-                // Set bubble lifetime
-                bubbleLifetimes[i] = Date.now() + BUBBLE_LIFETIME;
-                
-                // Make bubble visible with animation
-                bubble.material.opacity = 0;
-                const startTime = Date.now();
-                const fadeIn = function() {
-                    const elapsed = Date.now() - startTime;
-                    if (elapsed < 200) {
-                        bubble.material.opacity = Math.min(0.7, elapsed / 200 * 0.7);
-                        requestAnimationFrame(fadeIn);
-                    } else {
-                        bubble.material.opacity = 0.7;
-                    }
-                };
-                fadeIn();
-                
-                spawnedBubble = true;
-                break;
-            }
-        }
-        
-        // Stop the flow if we've been active for 3 seconds
-        if (currentTime - (lastBubbleTime - 150) > 3000) {
-            bubbleFlowActive = false;
-        }
-    }
-    
-    // Continue the flow
-    if (bubbleFlowActive) {
-        requestAnimationFrame(spawnBubblesInFlow);
-    }
 }
 
 function createRigidBody(Ammo, threeObject, physicsShape, mass, transform, linearDamping = 0, angularDamping = 0) {
@@ -1034,9 +1086,45 @@ function setupEventListeners() {
         bubbleSpawnPosition.z = value;
     });
     
-    // Add pump bubbles button
-    document.getElementById('pump-bubbles').addEventListener('click', function() {
-        activateBubbles();
+    // Add bubble power slider listener
+    document.getElementById('bubble-power').addEventListener('input', function() {
+        const value = parseInt(this.value);
+        document.getElementById('bubble-power-value').textContent = value;
+        bubblePower = value;
+    });
+    
+    // Add pump bubbles button with mousedown/mouseup events for hold behavior
+    const pumpButton = document.getElementById('pump-bubbles');
+    
+    // Mouse down starts pumping
+    pumpButton.addEventListener('mousedown', function() {
+        isPumpButtonHeld = true;
+        pumpStartTime = Date.now();
+        bubbleFlowActive = true;
+        spawnBubblesInFlow();
+    });
+    
+    // Mouse up stops pumping
+    pumpButton.addEventListener('mouseup', function() {
+        isPumpButtonHeld = false;
+    });
+    
+    // Mouse leaving the button also stops pumping (in case dragged out)
+    pumpButton.addEventListener('mouseleave', function() {
+        isPumpButtonHeld = false;
+    });
+    
+    // Touch events for mobile support
+    pumpButton.addEventListener('touchstart', function(e) {
+        e.preventDefault(); // Prevent default touch behavior
+        isPumpButtonHeld = true;
+        pumpStartTime = Date.now();
+        bubbleFlowActive = true;
+        spawnBubblesInFlow();
+    });
+    
+    pumpButton.addEventListener('touchend', function() {
+        isPumpButtonHeld = false;
     });
     
     // Add keyboard shortcuts
@@ -1044,6 +1132,8 @@ function setupEventListeners() {
         if (event.key === 's' || event.key === 'S') {
             dropRingsOnSlope();
         } else if (event.key === 'b' || event.key === 'B') {
+            // For keyboard, use the traditional approach (timer-based burst)
+            pumpStartTime = Date.now();
             activateBubbles();
         }
     });
@@ -1143,8 +1233,14 @@ function updatePhysics(deltaTime) {
         }
     }
     
-    // Check for bubble lifetimes
+    // Check if rings are on pegs periodically
     const currentTime = Date.now();
+    if (!window.lastPegCheckTime || currentTime - window.lastPegCheckTime > PEG_STABILITY_CHECK_INTERVAL) {
+        window.lastPegCheckTime = currentTime;
+        checkRingsOnPegs();
+    }
+    
+    // Check for bubble lifetimes
     let activeBubbleCount = 0;
     
     for (let i = 0; i < activeBubbles.length; i++) {
@@ -1180,6 +1276,130 @@ function updatePhysics(deltaTime) {
         frameCount = 0;
         lastFrameTime = currentFPSTime;
     }
+}
+
+// Add a new function to check if rings are on pegs and stabilize them
+function checkRingsOnPegs() {
+    // Skip if no pegs or rings
+    if (!pegs || pegs.length === 0 || !rigidBodies || rigidBodies.length === 0) return;
+    
+    console.log("Checking for rings on pegs...");
+    
+    // Check each ring (skip the first rigidBody which is typically the ground)
+    for (let i = 1; i < rigidBodies.length; i++) {
+        const ring = rigidBodies[i];
+        
+        // Skip non-torus objects and objects that are already marked as on a peg
+        if (!ring.geometry || !ring.geometry.type || ring.geometry.type !== 'TorusGeometry') continue;
+        
+        // For each peg, check if the ring is positioned on it
+        for (let j = 0; j < pegs.length; j++) {
+            const peg = pegs[j];
+            const pegPos = peg.position;
+            const ringPos = ring.position;
+            
+            // Check if ring is horizontally aligned with a peg
+            const horizontalDistance = Math.sqrt(
+                Math.pow(ringPos.x - pegPos.x, 2) + 
+                Math.pow(ringPos.z - pegPos.z, 2)
+            );
+            
+            // If ring is centered over a peg with small tolerance
+            if (horizontalDistance < PEG_DETECTION_DISTANCE) {
+                console.log(`Ring #${i} is horizontally aligned with Peg #${j} (distance: ${horizontalDistance.toFixed(2)})`);
+                
+                // Check vertical position relative to peg top
+                // This varies depending on which peg and ring height, so we use approximate values
+                const pegHeight = (j === 0) ? 2.0 : 3.5; // Approximate heights from createPegs function
+                const pegTop = pegPos.y + pegHeight / 2;
+                
+                // Log the ring's position relative to the peg
+                console.log(`Ring position Y: ${ringPos.y.toFixed(2)}, Peg top Y: ${pegTop.toFixed(2)}`);
+                
+                // Check if ring is at an appropriate height range for a peg
+                // The check allows for rings to be stacked
+                if (ringPos.y >= pegTop && ringPos.y <= pegTop + 10) {
+                    console.log(`Ring #${i} is at the correct height for Peg #${j}!`);
+                    
+                    // Ring is on peg! Stabilize it
+                    
+                    // If already stabilized, skip
+                    if (ring.userData.isOnPeg) {
+                        console.log(`Ring #${i} is already stabilized on Peg #${j}`);
+                        continue;
+                    }
+                    
+                    // Mark as on peg
+                    ring.userData.isOnPeg = true;
+                    console.log(`SUCCESS: Ring #${i} is now stabilized on Peg #${j}!`);
+                    
+                    // Get physics body
+                    const body = ring.userData.physicsBody;
+                    if (body) {
+                        // Make it more stable on the peg
+                        
+                        // Increase friction significantly
+                        body.setFriction(1.0); // Max friction (default was likely 0.5)
+                        
+                        // Reduce bounciness
+                        body.setRestitution(0.0); // No bounce
+                        
+                        // Increase angular damping to limit rotation
+                        body.setDamping(0.8, 0.9); // High linear and angular damping
+                        
+                        // Apply a small downward force to keep it seated
+                        body.applyCentralForce(new Ammo.btVector3(0, -2.0, 0));
+                        
+                        // Make it less affected by bubble hits
+                        ring.userData.bubbleResistance = 0.3; // Will only apply 30% of normal bubble force
+                        
+                        // Optional: Add visual feedback (subtle glow effect or color change)
+                        if (ring.material) {
+                            // Store original color
+                            if (!ring.userData.originalColor) {
+                                ring.userData.originalColor = ring.material.color.clone();
+                            }
+                            
+                            // Add subtle highlight
+                            ring.material.emissive = new THREE.Color(0x222222);
+                            ring.material.needsUpdate = true;
+                        }
+                    }
+                } else {
+                    console.log(`Ring #${i} is aligned with Peg #${j} but NOT at the correct height`);
+                    
+                    // If ring was previously on peg but now isn't, reset properties
+                    if (ring.userData.isOnPeg) {
+                        console.log(`Ring #${i} was knocked off Peg #${j}! Resetting properties.`);
+                        // Remove on-peg status
+                        ring.userData.isOnPeg = false;
+                        
+                        // Get physics body
+                        const body = ring.userData.physicsBody;
+                        if (body) {
+                            // Reset physics properties
+                            body.setFriction(0.5); // Normal friction
+                            body.setRestitution(0.2); // Normal bounce
+                            body.setDamping(0.3, 0.3); // Normal damping
+                            
+                            // Remove bubble resistance
+                            ring.userData.bubbleResistance = 1.0; // Normal bubble force impact
+                        }
+                        
+                        // Reset visual feedback
+                        if (ring.material && ring.userData.originalColor) {
+                            ring.material.emissive = new THREE.Color(0x000000);
+                            ring.material.needsUpdate = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Count rings on pegs
+    const ringsOnPegs = rigidBodies.filter(obj => obj.userData && obj.userData.isOnPeg).length;
+    console.log(`Total rings currently on pegs: ${ringsOnPegs}`);
 }
 
 function animate() {
