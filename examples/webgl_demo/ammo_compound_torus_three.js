@@ -158,7 +158,37 @@ function startDemo() {
 
 // Initialize background music
 function initBackgroundMusic() {
+    // Array of available music tracks
+    const musicTracks = [
+        'dubmood.mp3',
+        'Mesmerizing-Galaxy-Loop.mp3',
+        'mothership.mp3',
+        'Ringing Back the 90s.mp3',
+        'Ringing Back the 90s 2.mp3',
+        'Ring Toss Thrill.mp3',
+        'My Ring-Flinging Game.mp3'
+    ];
+    
+    // Randomly select a track
+    const randomTrack = musicTracks[Math.floor(Math.random() * musicTracks.length)];
+    
+    // Get the audio element
     backgroundMusic = document.getElementById('background-music');
+    
+    // Update the source to the randomly selected track
+    const sourceElement = backgroundMusic.querySelector('source');
+    sourceElement.src = `music/${randomTrack}`;
+    
+    // Need to reload the audio element after changing source
+    backgroundMusic.load();
+    
+    // Display which track is playing
+    console.log(`Now playing: ${randomTrack}`);
+    
+    // Update the track name display
+    document.getElementById('track-name').textContent = randomTrack.replace('.mp3', '');
+    
+    // Set initial volume
     backgroundMusic.volume = 0.5; // Set initial volume to 50%
     
     // Start playing music by default

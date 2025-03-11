@@ -23,6 +23,8 @@
             background-color: rgba(0, 0, 0, 0.5);
             color: white;
             z-index: 100;
+            text-align: center;
+            font-weight: bold;
         }
 
         .controls {
@@ -86,9 +88,10 @@
             right: 10px;
             background-color: rgba(0, 0, 0, 0.5);
             color: white;
-            padding: 5px;
+            padding: 5px 8px;
             border-radius: 5px;
             z-index: 100;
+            font-size: 14px;
         }
         
         /* Music control styles */
@@ -109,6 +112,11 @@
             font-size: 20px;
             cursor: pointer;
             transition: all 0.2s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0;
+            line-height: 1;
         }
         
         #toggle-music:hover {
@@ -134,6 +142,11 @@
             font-size: 20px;
             cursor: pointer;
             transition: all 0.2s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0;
+            line-height: 1;
         }
         
         #toggle-controls:hover {
@@ -362,7 +375,13 @@
             max-height: 80vh;
             aspect-ratio: 9/16; /* Mobile game aspect ratio */
             border-radius: 8px;
+            background: #00000099;
             overflow: hidden;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
+            border: 3px solid #222;
+            box-shadow: 
+                0 0 50px rgba(150, 200, 255, 0.2) inset,
+                0 0 20px rgba(0, 0, 0, 0.8);
             pointer-events: auto;
         }
         
@@ -482,9 +501,15 @@
                 left: 5px;
             }
             
+            #toggle-music, #toggle-controls {
+                width: 36px;
+                height: 36px;
+                font-size: 18px;
+            }
+            
             #controls-toggle {
                 top: 5px;
-                left: 55px;
+                left: 50px;
             }
             
             #floating-pump {
@@ -500,8 +525,27 @@
             
             #game-viewport {
                 width: 90%;
-                border-width: 6px; /* Thinner border for mobile */
                 max-height: 80vh;
+                border-width: 6px; /* Thinner border for mobile */
+                box-shadow: 
+                    0 0 30px rgba(150, 200, 255, 0.2) inset,
+                    0 0 15px rgba(0, 0, 0, 0.8);
+            }
+            
+            #info {
+                padding: 6px 0;
+                font-size: 15px;
+            }
+            
+            #fps {
+                top: 5px;
+                right: 5px;
+                padding: 4px 6px;
+                font-size: 12px;
+            }
+            
+            #track-info {
+                display: none !important; /* Hide on mobile to save space */
             }
         }
         
@@ -566,6 +610,28 @@
                 height: 100px;
             }
         }
+        
+        /* Track info styles */
+        #track-info {
+            display: none;
+            position: absolute;
+            top: 10px;
+            left: 50px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        #music-controls:hover #track-info {
+            display: block;
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -580,6 +646,7 @@
     <!-- Music controls -->
     <div id="music-controls">
         <button id="toggle-music" title="Toggle Music">🔊</button>
+        <div id="track-info">Now Playing: <span id="track-name"></span></div>
     </div>
     
     <!-- Controls toggle button -->
