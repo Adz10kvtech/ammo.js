@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+    <head>
+      <title>Bullet/WebGL Demo - Torus Grid</title>
+      <script src="CubicVR.min.js" type="text/javascript"></script>
+      <style type="text/css">
+        body {
+          background-color: #ccc;
+          text-size-adjust: none;
+        }
+      </style>
+
+      <script type="text/javascript">
+        // Main demo code
+        var toruses = [];
+
+        var lastFPS = 0;
+        var outElement = null;
+        var currFPS = 0, allFPS = 0;
+        function showFPS() {
+          if (!outElement) outElement = document.getElementById('out');
+          var now = Date.now();
+          if (now - lastFPS > 333) {
+            outElement.value = currFPS + ' / ' + allFPS;
+            lastFPS = now;
+          }
+        }
+
+        var FLOOR_SIZE = 100;
+        var FLOOR_HEIGHT = -56;
+        var TORUS_RADIUS = 1.0;      // Major radius of the torus
+        var TUBE_RADIUS = 0.3;       // Minor radius of the torus
+        var TORUS_SEGMENTS = 16;     // Number of segments around the major radius
+        var TUBE_SEGMENTS = 12;      // Number of segments around the minor radius
+        var RINGS_PER_ROW = 4;       // Number of rings in each row
+        var ROW_SPACING = 3.0;       // Space between rows
+        var RING_SPACING = 3.0;      // Space between rings in a row
+
+        var physicsWorker = null;
+
+        // CubicVR code
+        function startUp(NUM) {
+          var NUMRANGE = [];
+          while (NUMRANGE.length < NUM) NUMRANGE.push(NUMRANGE.length+1);
+
+          document.getElementById('postdiv').innerHTML = '(' + NUM + ' toruses)';
+          document.getElementById('during').style.visibility = 'visible';
+
+          var canvas = document.getElementById("canvas");
+          canvas.width = screen.width*0.75;
+          canvas.height = screen.height*0.50;
+
+          var gl = CubicVR.init(canvas);
+          if (!gl) {
+            alert("Sorry, no WebGL support :(");
+            return;
+          };
+
+          var quaternion = new CubicVR.Quaternion;
+          var scene = new CubicVR.Scene(canvas.width, canvas.height, 70);
+
+          var light = new CubicVR.Light({
+            type: CubicVR.enums.light.type.POINT,
+            intensity: 0.9,
+            areaCeiling: 80,
+            areaFloor: FLOOR_HEIGHT,
+            areaAxis: [15, 10],
+            distance: 60,
+            mapRes: 1024
+          });
+          scene.bindLight(light);
+
+          // Adjust camera position to better view the grid
+          scene.camera.position = [0, 15, 25];
+          scene.camera.target = [0, 0, 0];
+
+          var torusMaterials = [];
+          var torusMeshes = [];
+
+          // Create materials with different colors
+          var colors = [
+            [1.0, 0.2, 0.2],  // Red
+            [0.2, 1.0, 0.2],  // Green
+            [0.2, 0.2, 1.0],  // Blue
+            [1.0, 1.0, 0.2],  // Yellow
+            [1.0, 0.2, 1.0]   // Purple
+          ];
+
+          for (var i = 0; i < 5; i++) {
+            torusMaterials[i] = new CubicVR.Material({
+              color: colors[i]
+            });
+            
+            torusMeshes[i] = new CubicVR.primitives.torus({
+              majorRadius: TORUS_RADIUS,
+              minorRadius: TUBE_RADIUS,
+              segmentsR: TORUS_SEGMENTS,
+              segmentsT: TUBE_SEGMENTS,
+              material: torusMaterials[i]
+            }).calcNormals().triangulateQuads().compile().clean();
+          }
+
+          for (var i = 0; i < NUM; i++) {
+            toruses[i] = new CubicVR.SceneObject({ 
+              mesh: torusMeshes[Math.floor(Math.random()*5)], 
+              position: [0, -10000, 0] 
+            });
+            scene.bindSceneObject(toruses[i], true);
+          }
+
+          var floorMaterial = new CubicVR.Material({
+            color: [0.8, 0.8, 0.8]  // Gray floor
+          });
+          
+          var floorMesh = new CubicVR.primitives.box({
+            size: FLOOR_SIZE,
+            material: floorMaterial,
+            uvmapper: {
+                projectionMode: CubicVR.enums.uv.projection.CUBIC,
+                scale: [4, 4, 4]
+            }
+          }).calcNormals().triangulateQuads().compile().clean();
+
+          var floor_ = new CubicVR.SceneObject({ mesh: floorMesh, position: [0, FLOOR_HEIGHT, 0] });
+          scene.bindSceneObject(floor_, true);
+
+          // Worker
+          if (physicsWorker) physicsWorker.terminate();
+          physicsWorker = new Worker('worker_torus_grid.js');
+
+          physicsWorker.onmessage = function(event) {
+            var data = event.data;
+            if (data.isReady){
+              physicsWorker.postMessage({
+                num: NUM,
+                torusRadius: TORUS_RADIUS,
+                tubeRadius: TUBE_RADIUS,
+                ringsPerRow: RINGS_PER_ROW,
+                rowSpacing: ROW_SPACING,
+                ringSpacing: RING_SPACING
+              });
+              return;  
+            }
+            if (data.objects.length != NUM) return;
+            for (var i = 0; i < NUM; i++) {
+              var physicsObject = data.objects[i];
+              var renderObject = toruses[i];
+              renderObject.position[0] = physicsObject[0];
+              renderObject.position[1] = physicsObject[1];
+              renderObject.position[2] = physicsObject[2];
+              quaternion.x = physicsObject[3];
+              quaternion.y = physicsObject[4];
+              quaternion.z = physicsObject[5];
+              quaternion.w = physicsObject[6];
+              renderObject.rotation = quaternion.toEuler();
+            }
+            currFPS = data.currFPS;
+            allFPS = data.allFPS;
+          };
+
+          // Main loop
+          var mvc = new CubicVR.MouseViewController(canvas, scene.camera);
+
+          CubicVR.MainLoop(function(timer, gl) {
+            var dt = timer.getLastUpdateSeconds();
+            scene.render();
+            showFPS();
+          });
+        }
+      </script>
+    </head>
+    <body onload="document.getElementById('during').style.visibility = 'hidden'">
+      <center>
+        <h2>ammo.js Torus Grid Demo</h2>
+
+        <canvas id="canvas" width="1" height="1"></canvas>
+        <br>
+        <br>
+        <div id="before">
+          <form>
+            Toruses:
+            <select name="boxes">
+              <option value="4">4</option>
+              <option value="8">8</option>
+              <option value="12" selected>12</option>
+              <option value="16">16</option>
+              <option value="20">20</option>
+            </select>
+            <input type="button" value="go!" onclick="startUp(boxes.value);">
+          </form>
+        </div>
+        <div id="during">
+          <div>Physics FPS (current / stable): <input type="text" id="out" readonly="1" size="7"></div>
+          <div id="postdiv"></div>
+        </div>
+        <p>
+        This demo arranges torus shapes in rows of 4, demonstrating grid-based physics with
+        <b><a href="https://github.com/kripken/ammo.js">ammo.js</a></b>.
+        </p>
+      </center>
+    </body>
+</html> 
