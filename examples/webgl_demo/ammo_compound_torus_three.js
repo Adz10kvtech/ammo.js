@@ -6,6 +6,35 @@ let rigidBodies = [];
 let tmpTrans = null;
 let fpsElement;
 
+// Character selection variables
+let selectedCharacter = null;
+let characterBackgrounds = {
+    'beach': {
+        skyColor: 0x87CEEB,
+        floorColor: 0xF5DEB3, // Sandy color
+        fogColor: 0xE0FFFF,
+        fogDensity: 0.005
+    },
+    'space': {
+        skyColor: 0x000011,
+        floorColor: 0x333333, // Dark gray
+        fogColor: 0x000022,
+        fogDensity: 0.002
+    },
+    'forest': {
+        skyColor: 0x458B00,
+        floorColor: 0x556B2F, // Dark olive green
+        fogColor: 0x90EE90,
+        fogDensity: 0.01
+    },
+    'volcano': {
+        skyColor: 0x993300,
+        floorColor: 0x8B4513, // Saddle brown
+        fogColor: 0xFF4500, 
+        fogDensity: 0.02
+    }
+};
+
 // Torus parameters
 const TORUS_RADIUS = 1.0;      // Major radius of the torus
 const TUBE_RADIUS = 0.3;       // Minor radius of the torus
@@ -62,6 +91,22 @@ let highScore = 0;
 
 // Wait for DOM to load and Ammo to initialize
 document.addEventListener('DOMContentLoaded', function() {
+    // Set up character selection
+    document.querySelectorAll('.character-card').forEach(card => {
+        card.addEventListener('click', function() {
+            selectedCharacter = this.id;
+            const background = this.getAttribute('data-background');
+            
+            // Hide character selection and show start screen
+            document.getElementById('character-selection').style.display = 'none';
+            document.getElementById('start-screen').style.display = 'block';
+            
+            // Store selected background for later use
+            localStorage.setItem('selectedBackground', background);
+        });
+    });
+    
+    // Set up start button
     document.getElementById('start-button').addEventListener('click', startDemo);
 });
 
@@ -97,7 +142,15 @@ function initPhysics(Ammo) {
 function initGraphics() {
     // Create Three.js scene
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xbfd1e5);
+    
+    // Apply character-specific background
+    const selectedBackground = localStorage.getItem('selectedBackground') || 'beach'; // Default to beach if none selected
+    const bgSettings = characterBackgrounds[selectedBackground];
+    
+    scene.background = new THREE.Color(bgSettings.skyColor);
+    
+    // Add fog based on character theme
+    scene.fog = new THREE.FogExp2(bgSettings.fogColor, bgSettings.fogDensity);
     
     // Create camera with adjusted position to see the tank and slope on the floor
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.2, 2000);
@@ -194,15 +247,34 @@ function createObjects(Ammo, torusCount) {
 }
 
 function createFloor(Ammo) {
-    // Create visual floor (simplified)
+    // Get the selected background theme
+    const selectedBackground = localStorage.getItem('selectedBackground') || 'beach';
+    const bgSettings = characterBackgrounds[selectedBackground];
+    
+    // Create visual floor with character-specific color
     const floorGeometry = new THREE.BoxGeometry(FLOOR_SIZE, 100, FLOOR_SIZE);
     const floorMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0x808080,
+        color: bgSettings.floorColor,
         shininess: 0 // Disable specular highlights for performance
     });
     const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
     floorMesh.position.set(0, FLOOR_HEIGHT - 50, 0);
     scene.add(floorMesh);
+    
+    // Add environment-specific decorations based on character theme
+    if (selectedBackground === 'beach') {
+        // Add some palm trees or beach decorations
+        addBeachDecorations();
+    } else if (selectedBackground === 'space') {
+        // Add stars or space decorations
+        addSpaceDecorations();
+    } else if (selectedBackground === 'forest') {
+        // Add trees or forest decorations
+        addForestDecorations();
+    } else if (selectedBackground === 'volcano') {
+        // Add lava or volcano decorations
+        addVolcanoDecorations();
+    }
     
     // Create physics floor
     const floorShape = new Ammo.btBoxShape(new Ammo.btVector3(FLOOR_SIZE / 2, 50, FLOOR_SIZE / 2));
@@ -212,6 +284,139 @@ function createFloor(Ammo) {
     
     const mass = 0; // static object
     createRigidBody(Ammo, floorMesh, floorShape, mass, floorTransform);
+}
+
+// Add these helper functions for character-specific decorations
+function addBeachDecorations() {
+    // Add some palm trees or beach decorations
+    for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        const radius = 40;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        
+        // Create a simple palm tree
+        const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.8, 10, 8);
+        const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        trunk.position.set(x, FLOOR_HEIGHT - 45, z);
+        scene.add(trunk);
+        
+        // Create palm leaves
+        const leavesGeometry = new THREE.SphereGeometry(3, 4, 4);
+        leavesGeometry.scale(1, 0.3, 1);
+        const leavesMaterial = new THREE.MeshPhongMaterial({ color: 0x00AA00 });
+        const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+        leaves.position.set(x, FLOOR_HEIGHT - 40, z);
+        scene.add(leaves);
+    }
+}
+
+function addSpaceDecorations() {
+    // Add stars in the background
+    const starsGeometry = new THREE.BufferGeometry();
+    const starsMaterial = new THREE.PointsMaterial({
+        color: 0xFFFFFF,
+        size: 0.5,
+        sizeAttenuation: false
+    });
+    
+    const starsVertices = [];
+    for (let i = 0; i < 1000; i++) {
+        const x = (Math.random() - 0.5) * 2000;
+        const y = (Math.random() - 0.5) * 2000;
+        const z = (Math.random() - 0.5) * 2000;
+        starsVertices.push(x, y, z);
+    }
+    
+    starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+    const starField = new THREE.Points(starsGeometry, starsMaterial);
+    scene.add(starField);
+    
+    // Add a distant planet
+    const planetGeometry = new THREE.SphereGeometry(15, 32, 32);
+    const planetMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x996633,
+        emissive: 0x331100,
+        shininess: 0
+    });
+    const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+    planet.position.set(-80, 40, -100);
+    scene.add(planet);
+}
+
+function addForestDecorations() {
+    // Add trees around the play area
+    for (let i = 0; i < 20; i++) {
+        const angle = (i / 20) * Math.PI * 2;
+        const radius = 45;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        
+        // Tree trunk
+        const trunkGeometry = new THREE.CylinderGeometry(1, 1.5, 12, 8);
+        const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        trunk.position.set(x, FLOOR_HEIGHT - 44, z);
+        scene.add(trunk);
+        
+        // Tree foliage (conical for forest trees)
+        const foliageGeometry = new THREE.ConeGeometry(5, 15, 8);
+        const foliageMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x228B22,
+            shininess: 0
+        });
+        const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
+        foliage.position.set(x, FLOOR_HEIGHT - 35, z);
+        scene.add(foliage);
+    }
+}
+
+function addVolcanoDecorations() {
+    // Add volcanic rocks
+    for (let i = 0; i < 15; i++) {
+        const angle = (i / 15) * Math.PI * 2;
+        const radius = 42;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        
+        // Create a volcanic rock
+        const rockGeometry = new THREE.DodecahedronGeometry(Math.random() * 3 + 2);
+        const rockMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x333333,
+            emissive: 0x330000,
+            shininess: 0
+        });
+        const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+        rock.position.set(x, FLOOR_HEIGHT - 49 + Math.random() * 2, z);
+        rock.rotation.set(Math.random(), Math.random(), Math.random());
+        scene.add(rock);
+        
+        // Create a lava flow or glow
+        if (i % 3 === 0) {
+            const lavaGeometry = new THREE.CircleGeometry(Math.random() * 2 + 1, 16);
+            const lavaMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xFF4500,
+                emissive: 0xFF2000,
+                emissiveIntensity: 0.8,
+                shininess: 80
+            });
+            const lava = new THREE.Mesh(lavaGeometry, lavaMaterial);
+            lava.rotation.x = -Math.PI / 2; // Lay flat
+            lava.position.set(x + Math.random() * 4 - 2, FLOOR_HEIGHT - 49.5, z + Math.random() * 4 - 2);
+            scene.add(lava);
+        }
+    }
+    
+    // Add a distant volcano in the background
+    const volcanoGeometry = new THREE.ConeGeometry(20, 40, 16);
+    const volcanoMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x8B0000,
+        shininess: 0
+    });
+    const volcano = new THREE.Mesh(volcanoGeometry, volcanoMaterial);
+    volcano.position.set(-80, FLOOR_HEIGHT - 20, -80);
+    scene.add(volcano);
 }
 
 function createSlope(Ammo) {

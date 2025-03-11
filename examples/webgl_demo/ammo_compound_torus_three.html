@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Ammo.js Compound Torus Demo - Three.js Version</title>
+    <title>Ring Peg Challenge</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
         body {
             color: #61443e;
-            font-family: Monospace;
-            font-size: 13px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 16px;
             text-align: center;
             background-color: #ccc;
             margin: 0px;
@@ -20,18 +20,22 @@
             top: 0px;
             width: 100%;
             padding: 5px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            z-index: 100;
         }
 
         .controls {
             position: absolute;
             bottom: 10px;
-            left: 10%;
-            transform: translateX(-50%);
+            left: 10px;
             background-color: rgba(255, 255, 255, 0.7);
             padding: 10px;
             border-radius: 5px;
             display: inline-block;
             text-align: center;
+            max-width: 300px;
+            z-index: 90;
         }
 
         #fps {
@@ -42,25 +46,291 @@
             color: white;
             padding: 5px;
             border-radius: 5px;
+            z-index: 100;
+        }
+        
+        /* Character Selection Screen Styles */
+        #character-selection {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .selection-container {
+            width: 90%;
+            max-width: 800px;
+            text-align: center;
+        }
+        
+        .selection-title {
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            font-size: 2.5rem;
+            margin-bottom: 30px;
+            font-weight: bold;
+        }
+        
+        .character-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 25px;
+            margin: 0 auto;
+            max-width: 800px;
+        }
+        
+        .character-card {
+            background-color: rgba(255, 255, 255, 0.85);
+            border-radius: 15px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            overflow: hidden;
+            position: relative;
+            transform: translateY(0);
+        }
+        
+        .character-card:hover, .character-card:active {
+            transform: translateY(-8px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.3);
+        }
+        
+        .character-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(to right, #ff7e5f, #feb47b);
+            z-index: 1;
+        }
+        
+        #character-1::before { background: linear-gradient(to right, #36d1dc, #5b86e5); }
+        #character-2::before { background: linear-gradient(to right, #654ea3, #eaafc8); }
+        #character-3::before { background: linear-gradient(to right, #56ab2f, #a8e063); }
+        #character-4::before { background: linear-gradient(to right, #cb2d3e, #ef473a); }
+        
+        .character-portrait {
+            width: 100%;
+            height: 180px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            background-size: cover;
+            background-position: center;
+            position: relative;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+            overflow: hidden;
+        }
+        
+        .character-card:hover .character-portrait {
+            transform: scale(1.05);
+        }
+        
+        .character-portrait::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 30%;
+            background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+        }
+        
+        .character-name {
+            font-weight: bold;
+            font-size: 1.4rem;
+            margin-bottom: 8px;
+            color: #333;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .character-desc {
+            font-size: 1rem;
+            color: #555;
+            line-height: 1.4;
+        }
+        
+        /* Character-specific background images */
+        #character-1 .character-portrait {
+            background-image: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=60');
+        }
+        
+        #character-2 .character-portrait {
+            background-image: url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=60');
+        }
+        
+        #character-3 .character-portrait {
+            background-image: url('https://images.unsplash.com/photo-1448375240586-882707db888b?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=60');
+        }
+        
+        #character-4 .character-portrait {
+            background-image: url('https://images.unsplash.com/photo-1554232682-b9ef9c92f8de?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=60');
+        }
+        
+        /* Start Screen Styles */
+        #start-screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 25px;
+            border-radius: 15px;
+            display: none;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.3);
+            max-width: 400px;
+            width: 90%;
+        }
+        
+        #start-screen h2 {
+            margin-top: 0;
+            color: #333;
+            font-size: 1.8rem;
+        }
+        
+        #start-screen p {
+            color: #555;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        
+        #start-screen select {
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            margin-right: 10px;
+            font-size: 1rem;
+        }
+        
+        #start-button {
+            background: linear-gradient(to right, #4facfe, #00f2fe);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-top: 15px;
+        }
+        
+        #start-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0,0,0,0.15);
+        }
+        
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            .selection-title {
+                font-size: 2rem;
+                margin-bottom: 20px;
+            }
+            
+            .character-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+            }
+            
+            .character-portrait {
+                height: 140px;
+            }
+            
+            .character-name {
+                font-size: 1.2rem;
+            }
+            
+            .character-desc {
+                font-size: 0.9rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .selection-title {
+                font-size: 1.7rem;
+            }
+            
+            .character-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                left: 50%;
+                transform: translateX(-50%);
+                width: 90%;
+                max-width: none;
+                bottom: 5px;
+            }
         }
     </style>
 </head>
 <body>
-    <div id="info">Ammo.js Compound Torus Demo - Three.js Version</div>
+    <div id="info">Ring Peg Challenge</div>
     <div id="fps">FPS: 0</div>
     
-    <div id="start-screen" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(255,255,255,0.8); padding:20px; border-radius:10px;">
-        <h2>Ammo.js Compound Torus Demo</h2>
-        <p>This demo shows toruses with real holes that objects can pass through!</p>
-        <label for="torus-count">Toruses: </label>
-        <select id="torus-count">
-            <option value="5">5</option>
-            <option value="10" selected>10</option>
-            <option value="20">20</option>
-            <option value="30">30</option>
-            <option value="50">50</option>
-        </select>
-        <button id="start-button">Start Demo!</button>
+    <!-- Character Selection Screen -->
+    <div id="character-selection">
+        <div class="selection-container">
+            <h1 class="selection-title">Choose Your Character</h1>
+            <div class="character-grid">
+                <div class="character-card" id="character-1" data-background="beach">
+                    <div class="character-portrait"></div>
+                    <div class="character-name">Captain Splash</div>
+                    <div class="character-desc">Expert of water currents who mastered the art of ring tossing on tropical beaches.</div>
+                </div>
+                <div class="character-card" id="character-2" data-background="space">
+                    <div class="character-portrait"></div>
+                    <div class="character-name">Astro Ring</div>
+                    <div class="character-desc">Zero gravity specialist who perfected ring trajectories in the vacuum of space.</div>
+                </div>
+                <div class="character-card" id="character-3" data-background="forest">
+                    <div class="character-portrait"></div>
+                    <div class="character-name">Leafy Loop</div>
+                    <div class="character-desc">Nature's champion who learned precision from watching falling leaves in ancient forests.</div>
+                </div>
+                <div class="character-card" id="character-4" data-background="volcano">
+                    <div class="character-portrait"></div>
+                    <div class="character-name">Magma Master</div>
+                    <div class="character-desc">Heat resistant ring tosser who trained in the extreme conditions of active volcanoes.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="start-screen">
+        <h2>Ring Peg Challenge</h2>
+        <p>Land rings on pegs using water currents and physics to score points! How many can you land?</p>
+        <div>
+            <label for="torus-count">Number of Rings: </label>
+            <select id="torus-count">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+                <option value="50">50</option>
+            </select>
+        </div>
+        <button id="start-button">Start Game!</button>
     </div>
     
     <div class="controls" id="force-controls" style="display:none;">
