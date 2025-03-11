@@ -10,7 +10,7 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             font-size: 16px;
             text-align: center;
-            background-color: #ccc;
+            background-color: #111;
             margin: 0px;
             overflow: hidden;
         }
@@ -29,13 +29,55 @@
             position: absolute;
             bottom: 10px;
             left: 10px;
-            background-color: rgba(255, 255, 255, 0.7);
-            padding: 10px;
-            border-radius: 5px;
+            background-color: rgba(40, 40, 40, 0.85);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
             display: inline-block;
-            text-align: center;
+            text-align: left;
             max-width: 300px;
             z-index: 90;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+        }
+
+        .controls h3 {
+            color: #4facfe;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 5px;
+            margin-top: 0;
+        }
+
+        .controls button {
+            background-color: #4c9ed9;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px 0;
+            transition: background-color 0.2s;
+        }
+
+        .controls button:hover {
+            background-color: #3a7fb1;
+        }
+
+        .controls input[type="range"] {
+            background-color: #444;
+            border-radius: 10px;
+        }
+
+        .controls select {
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        #force-strength, #bubble-x, #bubble-y, #bubble-z, #bubble-power, #bubble-angle {
+            width: 140px;
         }
 
         #fps {
@@ -47,6 +89,56 @@
             padding: 5px;
             border-radius: 5px;
             z-index: 100;
+        }
+        
+        /* Music control styles */
+        #music-controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+        }
+        
+        #toggle-music {
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        #toggle-music:hover {
+            background-color: rgba(0, 0, 0, 0.7);
+            transform: scale(1.1);
+        }
+        
+        /* Controls toggle button styles */
+        #controls-toggle {
+            position: absolute;
+            top: 10px;
+            left: 60px; /* Position it next to the music button */
+            z-index: 100;
+        }
+        
+        #toggle-controls {
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        #toggle-controls:hover {
+            background-color: rgba(0, 0, 0, 0.7);
+            transform: scale(1.1);
         }
         
         /* Character Selection Screen Styles */
@@ -76,6 +168,7 @@
             width: 90%;
             max-width: 800px;
             text-align: center;
+            padding: 20px 0;
         }
         
         .selection-title {
@@ -104,6 +197,8 @@
             overflow: hidden;
             position: relative;
             transform: translateY(0);
+            display: flex;
+            flex-direction: column;
         }
         
         .character-card:hover, .character-card:active {
@@ -138,6 +233,15 @@
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
             transition: transform 0.3s ease;
             overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .character-portrait img {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
         }
         
         .character-card:hover .character-portrait {
@@ -167,23 +271,10 @@
             font-size: 1rem;
             color: #555;
             line-height: 1.4;
-        }
-        
-        /* Character-specific background images */
-        #character-1 .character-portrait {
-            background-image: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=60');
-        }
-        
-        #character-2 .character-portrait {
-            background-image: url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=60');
-        }
-        
-        #character-3 .character-portrait {
-            background-image: url('https://images.unsplash.com/photo-1448375240586-882707db888b?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=60');
-        }
-        
-        #character-4 .character-portrait {
-            background-image: url('https://images.unsplash.com/photo-1554232682-b9ef9c92f8de?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=60');
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
         }
         
         /* Start Screen Styles */
@@ -240,6 +331,65 @@
             box-shadow: 0 6px 10px rgba(0,0,0,0.15);
         }
         
+        /* Bedroom Frame Styles */
+        #bedroom-frame {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            display: none;
+        }
+        
+        #bedroom-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+        
+        #game-viewport {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 70%;
+            height: 70%;
+            max-height: 80vh;
+            aspect-ratio: 9/16; /* Mobile game aspect ratio */
+            border-radius: 8px;
+            overflow: hidden;
+            pointer-events: auto;
+        }
+        
+        /* TV Screen Glare */
+        #game-viewport::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 30%;
+            background: linear-gradient(to bottom, 
+                rgba(255, 255, 255, 0.15) 0%, 
+                rgba(255, 255, 255, 0) 100%);
+            z-index: 5;
+            pointer-events: none;
+        }
+        
+        /* Make canvas fill the game viewport */
+        canvas {
+            position: absolute;
+            width: 100% !important;
+            height: 100% !important;
+            left: 0;
+            top: 0;
+        }
+        
         /* Mobile Responsiveness */
         @media (max-width: 768px) {
             .selection-title {
@@ -262,16 +412,59 @@
             
             .character-desc {
                 font-size: 0.9rem;
+                max-height: 60px;
+                overflow: hidden;
+            }
+            
+            #game-viewport {
+                width: 85%;
+                height: auto; /* Let the aspect ratio control the height */
+                max-height: 70vh;
             }
         }
         
         @media (max-width: 480px) {
+            .selection-container {
+                width: 95%;
+                padding: 10px 0;
+                overflow-y: auto;
+            }
+            
             .selection-title {
                 font-size: 1.7rem;
+                margin-bottom: 15px;
             }
             
             .character-grid {
                 grid-template-columns: 1fr;
+                width: 90%;
+                margin: 0 auto;
+                gap: 12px;
+            }
+            
+            .character-card {
+                padding: 10px;
+                margin-bottom: 5px;
+            }
+            
+            .character-portrait {
+                height: 120px;
+                margin-bottom: 10px;
+            }
+            
+            .character-name {
+                font-size: 1.2rem;
+                margin-bottom: 5px;
+            }
+            
+            .character-desc {
+                font-size: 0.85rem;
+                line-height: 1.3;
+                height: auto;
+                max-height: none;
+                -webkit-line-clamp: initial;
+                white-space: normal;
+                overflow: visible;
             }
             
             .controls {
@@ -280,6 +473,97 @@
                 width: 90%;
                 max-width: none;
                 bottom: 5px;
+                max-height: 80vh;
+                overflow-y: auto;
+            }
+            
+            #music-controls {
+                top: 5px;
+                left: 5px;
+            }
+            
+            #controls-toggle {
+                top: 5px;
+                left: 55px;
+            }
+            
+            #floating-pump {
+                bottom: 15px;
+                right: 15px;
+            }
+            
+            #floating-pump-button {
+                width: 50px;
+                height: 50px;
+                font-size: 25px;
+            }
+            
+            #game-viewport {
+                width: 90%;
+                border-width: 6px; /* Thinner border for mobile */
+                max-height: 80vh;
+            }
+        }
+        
+        /* Portrait orientation specific styles */
+        @media (max-width: 480px) and (max-aspect-ratio: 3/4) {
+            #game-viewport {
+                width: 85%;
+                height: auto;
+                max-height: 70vh;
+            }
+        }
+        
+        /* Floating pump button styles */
+        #floating-pump {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            pointer-events: auto;
+        }
+        
+        #floating-pump-button {
+            background: linear-gradient(145deg, #4c9ed9, #3a7fb1);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            font-size: 30px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            transition: all 0.2s ease;
+            animation: pulse 1.5s infinite;
+        }
+        
+        #floating-pump-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
+        }
+        
+        #floating-pump-button:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        @media (max-height: 640px) {
+            #character-selection {
+                overflow-y: auto;
+            }
+            
+            .character-grid {
+                padding-bottom: 20px;
+            }
+            
+            .character-portrait {
+                height: 100px;
             }
         }
     </style>
@@ -288,29 +572,63 @@
     <div id="info">Ring Peg Challenge</div>
     <div id="fps">FPS: 0</div>
     
+    <!-- Audio player (hidden) -->
+    <audio id="background-music" loop>
+        <source src="music/dubmood.mp3" type="audio/mp3">
+    </audio>
+    
+    <!-- Music controls -->
+    <div id="music-controls">
+        <button id="toggle-music" title="Toggle Music">🔊</button>
+    </div>
+    
+    <!-- Controls toggle button -->
+    <div id="controls-toggle">
+        <button id="toggle-controls" title="Toggle Controls">⚙️</button>
+    </div>
+    
+    <!-- Bedroom frame that will surround the game canvas -->
+    <div id="bedroom-frame">
+        <img id="bedroom-image" src="" alt="Character's bedroom">
+        <div id="game-viewport"></div>
+        
+        <!-- Floating pump button -->
+        <div id="floating-pump">
+            <button id="floating-pump-button" title="Pump Bubbles!">💭</button>
+        </div>
+    </div>
+    
     <!-- Character Selection Screen -->
     <div id="character-selection">
         <div class="selection-container">
             <h1 class="selection-title">Choose Your Character</h1>
             <div class="character-grid">
-                <div class="character-card" id="character-1" data-background="beach">
-                    <div class="character-portrait"></div>
-                    <div class="character-name">Captain Splash</div>
+                <div class="character-card" id="character-1" data-background="beach" data-character="jill" data-bedroom="jills room.png">
+                    <div class="character-portrait">
+                        <img src="images/chill-jill.png" alt="Chill Jill">
+                    </div>
+                    <div class="character-name">Chill Jill</div>
                     <div class="character-desc">Expert of water currents who mastered the art of ring tossing on tropical beaches.</div>
                 </div>
-                <div class="character-card" id="character-2" data-background="space">
-                    <div class="character-portrait"></div>
-                    <div class="character-name">Astro Ring</div>
+                <div class="character-card" id="character-2" data-background="space" data-character="pam" data-bedroom="pams bedroom.png">
+                    <div class="character-portrait">
+                        <img src="images/pixel-pam.png" alt="Pixel Pam">
+                    </div>
+                    <div class="character-name">Pixel Pam</div>
                     <div class="character-desc">Zero gravity specialist who perfected ring trajectories in the vacuum of space.</div>
                 </div>
-                <div class="character-card" id="character-3" data-background="forest">
-                    <div class="character-portrait"></div>
-                    <div class="character-name">Leafy Loop</div>
+                <div class="character-card" id="character-3" data-background="forest" data-character="ricky" data-bedroom="ricky bedroom.png">
+                    <div class="character-portrait">
+                        <img src="images/ricky.png" alt="Ricky">
+                    </div>
+                    <div class="character-name">Ricky</div>
                     <div class="character-desc">Nature's champion who learned precision from watching falling leaves in ancient forests.</div>
                 </div>
-                <div class="character-card" id="character-4" data-background="volcano">
-                    <div class="character-portrait"></div>
-                    <div class="character-name">Magma Master</div>
+                <div class="character-card" id="character-4" data-background="volcano" data-character="tony" data-bedroom="tony bedroom.png">
+                    <div class="character-portrait">
+                        <img src="images/tubo-tony.png" alt="Tubo Tony">
+                    </div>
+                    <div class="character-name">Tubo Tony</div>
                     <div class="character-desc">Heat resistant ring tosser who trained in the extreme conditions of active volcanoes.</div>
                 </div>
             </div>

@@ -5,9 +5,12 @@ let clock = new THREE.Clock();
 let rigidBodies = [];
 let tmpTrans = null;
 let fpsElement;
+let backgroundMusic;
+let isMusicPlaying = false;
 
 // Character selection variables
 let selectedCharacter = null;
+let selectedBedroom = null;
 let characterBackgrounds = {
     'beach': {
         skyColor: 0x87CEEB,
@@ -96,6 +99,8 @@ document.addEventListener('DOMContentLoaded', function() {
         card.addEventListener('click', function() {
             selectedCharacter = this.id;
             const background = this.getAttribute('data-background');
+            // Store the selected bedroom image for later use
+            selectedBedroom = this.getAttribute('data-bedroom');
             
             // Hide character selection and show start screen
             document.getElementById('character-selection').style.display = 'none';
@@ -103,6 +108,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Store selected background for later use
             localStorage.setItem('selectedBackground', background);
+            localStorage.setItem('selectedBedroom', selectedBedroom);
         });
     });
     
@@ -111,22 +117,73 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function startDemo() {
-    const torusCount = parseInt(document.getElementById('torus-count').value);
-    document.getElementById('start-screen').style.display = 'none';
-    document.getElementById('force-controls').style.display = 'block';
+    // Initialize graphics
+    initGraphics();
+    
+    // Set up the bedroom frame
+    setupBedroomFrame();
     
     // Initialize Ammo.js
     Ammo().then(function(Ammo) {
+        // Set up transformations
         tmpTrans = new Ammo.btTransform();
+        
         initPhysics(Ammo);
-        initGraphics();
+        
         // Pre-create shared resources
         createSharedResources(Ammo);
-        // Create game objects
+        
+        // Get the number of rings selected
+        const torusCount = parseInt(document.getElementById('torus-count').value);
+        
+        // Create the objects
         createObjects(Ammo, torusCount);
+        
+        // Initialize music
+        initBackgroundMusic();
+        
+        // Set up event listeners
         setupEventListeners();
+        
+        // Hide the start screen
+        document.getElementById('start-screen').style.display = 'none';
+        
+        // Controls are hidden by default now
+        document.getElementById('force-controls').style.display = 'none';
+        
+        // Start animation
         animate();
     });
+}
+
+// Initialize background music
+function initBackgroundMusic() {
+    backgroundMusic = document.getElementById('background-music');
+    backgroundMusic.volume = 0.5; // Set initial volume to 50%
+    
+    // Start playing music by default
+    backgroundMusic.play()
+        .then(() => {
+            isMusicPlaying = true;
+            document.getElementById('toggle-music').textContent = '🔊';
+        })
+        .catch(e => {
+            // Handle autoplay restrictions (common in browsers)
+            console.log("Autoplay failed:", e);
+            // We'll leave the button in default state for user to press
+        });
+}
+
+function setupBedroomFrame() {
+    // Get the selected bedroom image from localStorage
+    const bedroomImage = localStorage.getItem('selectedBedroom');
+    
+    // Set the bedroom image
+    const bedroomImageElement = document.getElementById('bedroom-image');
+    bedroomImageElement.src = 'images/' + bedroomImage;
+    
+    // Show the bedroom frame
+    document.getElementById('bedroom-frame').style.display = 'block';
 }
 
 function initPhysics(Ammo) {
@@ -147,38 +204,70 @@ function initGraphics() {
     const selectedBackground = localStorage.getItem('selectedBackground') || 'beach'; // Default to beach if none selected
     const bgSettings = characterBackgrounds[selectedBackground];
     
-    scene.background = new THREE.Color(bgSettings.skyColor);
+    // Make scene background transparent instead of using the color
+    scene.background = null; // Set to null for transparency
     
-    // Add fog based on character theme
-    scene.fog = new THREE.FogExp2(bgSettings.fogColor, bgSettings.fogDensity);
+    // Either remove fog completely or make it very subtle and transparent
+    // scene.fog = new THREE.FogExp2(bgSettings.fogColor, bgSettings.fogDensity);
     
-    // Create camera with adjusted position to see the tank and slope on the floor
-    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.2, 2000);
-    camera.position.set(0, -FLOOR_HEIGHT/4, 40); // Lower camera position for better view
-    camera.lookAt(0, FLOOR_HEIGHT + 10, -10); // Look at the area where tank and slope sit on the floor
+    // Create camera with a more direct view of the game area
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.2, 2000);
     
-    // Create renderer with performance optimizations
+    // Position the camera to face the game more directly, but lower down
+    camera.position.set(100, -20, 50); // Lower Y position for a better view
+    camera.lookAt(0, -35, 0); // Adjust lookAt point to match lower position
+    
+    // Create renderer with alpha transparency enabled
     renderer = new THREE.WebGLRenderer({ 
-        antialias: false,  // Disable antialiasing for performance
-        powerPreference: 'high-performance' 
+        antialias: true,
+        alpha: true // Enable transparency
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio
+    renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+    renderer.shadowMap.enabled = true;
+    renderer.setClearColor(0x000000, 0); // Set clear color with 0 alpha (fully transparent)
     
-    // Add orbit controls with damping disabled for better performance
+    // Append to game viewport instead of directly to body
+    const gameViewport = document.getElementById('game-viewport');
+    gameViewport.appendChild(renderer.domElement);
+    
+    // Create orbit controls with limits and set target to match camera lookAt
     controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = false;
-    controls.target.set(0, FLOOR_HEIGHT + 10, -10); // Update orbit controls target to match lookAt
-    controls.update();
+    controls.target.set(0, -30, 0); // Set the orbit target to match the lookAt point
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = false;
+    controls.minDistance = 20;
+    controls.maxDistance = 100;
+    controls.maxPolarAngle = Math.PI / 2;
     
-    // Add lighting - simplified for better performance
-    const ambientLight = new THREE.AmbientLight(0x808080, 0.7); // Increased intensity
+    // Create lighting
+    // Add hemisphere light (sky + ground)
+    const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.7);
+    scene.add(hemisphereLight);
+    
+    // Add directional light with shadows
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    directionalLight.position.set(30, 100, 30);
+    directionalLight.castShadow = true;
+    directionalLight.shadow.camera.top = 50;
+    directionalLight.shadow.camera.bottom = -50;
+    directionalLight.shadow.camera.left = -50;
+    directionalLight.shadow.camera.right = 50;
+    directionalLight.shadow.camera.near = 0.1;
+    directionalLight.shadow.camera.far = 200;
+    directionalLight.shadow.mapSize.width = 2048; // Higher resolution shadows
+    directionalLight.shadow.mapSize.height = 2048;
+    scene.add(directionalLight);
+    
+    // Add a subtle ambient light for better visibility of transparent objects
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
     scene.add(ambientLight);
     
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
-    dirLight.position.set(10, 10, 5);
-    scene.add(dirLight);
+    // Add a point light inside the tank for a glowing effect
+    const tankLight = new THREE.PointLight(0x88ccff, 0.7, 50);
+    tankLight.position.set(0, -15, 0);
+    scene.add(tankLight);
     
     // Set up FPS display
     fpsElement = document.getElementById('fps');
@@ -203,9 +292,16 @@ function initGraphics() {
 }
 
 function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
+    // Get the game viewport dimensions for proper rendering
+    const gameViewport = document.getElementById('game-viewport');
+    const viewportRect = gameViewport.getBoundingClientRect();
+    
+    // Update camera
+    camera.aspect = viewportRect.width / viewportRect.height;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    
+    // Update renderer size based on the actual game viewport dimensions
+    renderer.setSize(viewportRect.width, viewportRect.height);
 }
 
 // Create shared resources to improve performance
@@ -255,12 +351,17 @@ function createFloor(Ammo) {
     const floorGeometry = new THREE.BoxGeometry(FLOOR_SIZE, 100, FLOOR_SIZE);
     const floorMaterial = new THREE.MeshPhongMaterial({ 
         color: bgSettings.floorColor,
-        shininess: 0 // Disable specular highlights for performance
+        transparent: true,
+        opacity: 0.6,       // Make floor partially transparent
+        shininess: 60,      // Add some shininess for a glossy effect
+        specular: 0x333333  // Slight specular highlight
     });
     const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
     floorMesh.position.set(0, FLOOR_HEIGHT - 50, 0);
-    scene.add(floorMesh);
+   // scene.add(floorMesh);
     
+    // Remove environment-specific decorations to clean up the scene
+    /*
     // Add environment-specific decorations based on character theme
     if (selectedBackground === 'beach') {
         // Add some palm trees or beach decorations
@@ -275,6 +376,7 @@ function createFloor(Ammo) {
         // Add lava or volcano decorations
         addVolcanoDecorations();
     }
+    */
     
     // Create physics floor
     const floorShape = new Ammo.btBoxShape(new Ammo.btVector3(FLOOR_SIZE / 2, 50, FLOOR_SIZE / 2));
@@ -442,9 +544,9 @@ function createSlope(Ammo) {
     const slopeMaterial = new THREE.MeshPhongMaterial({ 
         color: 0xc0e8ff,  // Very light blue tint
         transparent: true,
-        opacity: 0.3,
-        shininess: 90,     // More glossy/plastic look
-        specular: 0x666666 // Light specular highlight
+        opacity: 0.4,     // Semi-transparent
+        shininess: 90,    // Highly glossy
+        specular: 0xffffff // Strong specular highlight
     });
     const slopeMesh = new THREE.Mesh(slopeGeometry, slopeMaterial);
     
@@ -492,20 +594,23 @@ function createTank(Ammo) {
     
     // Create materials
     
-    // Clear plastic material for main tank body
+    // Clear glass material for main tank body
     const tankClearMaterial = new THREE.MeshPhongMaterial({
         color: 0xe0f4ff, // Extremely light blue tint
         transparent: true, 
-        opacity: 0.1,
-        shininess: 0, // More glossy/plastic look
-        specular: 0x666666 // Light specular highlight
+        opacity: 0.2,     // More transparent
+        shininess: 100,   // More glossy/glass look
+        specular: 0xffffff, // Stronger specular highlight for glass
+        reflectivity: 1.0  // Maximum reflectivity
     });
     
     // Red plastic material for top and bottom
     const tankRedMaterial = new THREE.MeshPhongMaterial({
         color: 0xdd1111, // Bright red
-        shininess: 70,
-        specular: 0x666666 // Light specular highlight
+        transparent: true,
+        opacity: 0.8,     // Slightly transparent
+        shininess: 80,
+        specular: 0xffffff // Stronger specular highlight
     });
     
     // Position tank on the floor
@@ -1029,7 +1134,12 @@ function spawnBubblesInFlow() {
         // Use the position from the sliders with minimal variance
         const releaseX = bubbleSpawnPosition.x;
         const releaseY = tankY + bubbleSpawnPosition.y;
-        const releaseZ = bubbleSpawnPosition.z;
+        // Get the Z value directly from the slider to ensure it's current
+        const zSliderValue = parseFloat(document.getElementById('bubble-z').value);
+        const releaseZ = zSliderValue; // Use the direct slider value instead of bubbleSpawnPosition.z
+        
+        // Log spawn coordinates for debugging
+        console.log("Spawning bubble at:", { x: releaseX, y: releaseY, z: releaseZ });
         
         // Try to find an inactive bubble
         let spawnedBubble = false;
@@ -1266,6 +1376,33 @@ function createRigidBody(Ammo, threeObject, physicsShape, mass, transform, linea
 }
 
 function setupEventListeners() {
+    // Controls toggle button
+    document.getElementById('toggle-controls').addEventListener('click', function() {
+        const controlsElement = document.getElementById('force-controls');
+        if (controlsElement.style.display === 'none' || controlsElement.style.display === '') {
+            controlsElement.style.display = 'block';
+            this.style.backgroundColor = 'rgba(76, 158, 217, 0.7)'; // Highlight button when controls are shown
+        } else {
+            controlsElement.style.display = 'none';
+            this.style.backgroundColor = 'rgba(0, 0, 0, 0.5)'; // Return to original color
+        }
+    });
+
+    // Music toggle button
+    document.getElementById('toggle-music').addEventListener('click', function() {
+        if (isMusicPlaying) {
+            // Pause music
+            backgroundMusic.pause();
+            this.textContent = '🔇';
+            isMusicPlaying = false;
+        } else {
+            // Play music
+            backgroundMusic.play().catch(e => console.log("Audio play failed:", e));
+            this.textContent = '🔊';
+            isMusicPlaying = true;
+        }
+    });
+    
     // Force strength slider
     document.getElementById('force-strength').addEventListener('input', function() {
         document.getElementById('strength-value').textContent = this.value;
@@ -1327,10 +1464,19 @@ function setupEventListeners() {
         bubbleSpawnPosition.y = value;
     });
     
+    // Fix for the bubble-z slider
     document.getElementById('bubble-z').addEventListener('input', function() {
+        // Parse the slider value as a float
         const value = parseFloat(this.value);
+        
+        // Update the display text
         document.getElementById('bubble-z-value').textContent = value;
+        
+        // Update the global bubble spawn position
         bubbleSpawnPosition.z = value;
+        
+        // Log the updated position for debugging
+        console.log("Bubble Z position updated to:", value);
     });
     
     // Add bubble power slider listener
@@ -1379,6 +1525,49 @@ function setupEventListeners() {
     
     pumpButton.addEventListener('touchend', function() {
         isPumpButtonHeld = false;
+    });
+    
+    // Add floating pump button functionality
+    const floatingPumpButton = document.getElementById('floating-pump-button');
+    
+    // Mouse down starts pumping
+    floatingPumpButton.addEventListener('mousedown', function() {
+        isPumpButtonHeld = true;
+        pumpStartTime = Date.now();
+        bubbleFlowActive = true;
+        spawnBubblesInFlow();
+        
+        // Add visual feedback
+        this.style.transform = 'scale(0.95)';
+    });
+    
+    // Mouse up stops pumping
+    floatingPumpButton.addEventListener('mouseup', function() {
+        isPumpButtonHeld = false;
+        this.style.transform = '';
+    });
+    
+    // Mouse leaving the button also stops pumping
+    floatingPumpButton.addEventListener('mouseleave', function() {
+        isPumpButtonHeld = false;
+        this.style.transform = '';
+    });
+    
+    // Touch events for mobile support
+    floatingPumpButton.addEventListener('touchstart', function(e) {
+        e.preventDefault(); // Prevent default touch behavior
+        isPumpButtonHeld = true;
+        pumpStartTime = Date.now();
+        bubbleFlowActive = true;
+        spawnBubblesInFlow();
+        
+        // Add visual feedback
+        this.style.transform = 'scale(0.95)';
+    });
+    
+    floatingPumpButton.addEventListener('touchend', function() {
+        isPumpButtonHeld = false;
+        this.style.transform = '';
     });
     
     // Add keyboard shortcuts
