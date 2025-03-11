@@ -86,6 +86,7 @@ let pumpStartTime = 0; // When the pump button was pressed
 const BUBBLE_SPAWN_INTERVAL = 30; // Spawn bubbles more frequently (33 per second)
 const PEG_DETECTION_DISTANCE = 0.5; // Distance to detect if a ring is on a peg
 const PEG_STABILITY_CHECK_INTERVAL = 500; // Check if rings are on pegs every 500ms
+let isBubbleSoundPlaying = false; // Track if bubble sound is currently playing
 
 // Add these global variables near the top with the other globals
 let score = 0;
@@ -117,6 +118,18 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function startDemo() {
+    // Hide the character selection
+    document.getElementById('character-selection').style.display = 'none';
+    
+    // Show the start screen
+    document.getElementById('start-screen').style.display = 'block';
+    
+    // Reset game state
+    toruses = [];
+    pegs = [];
+    rigidBodies = [];
+    ringsOnPegs = 0; // Reset score counter
+    
     // Initialize graphics
     initGraphics();
     
@@ -141,6 +154,9 @@ function startDemo() {
         
         // Initialize music
         initBackgroundMusic();
+        
+        // Initialize sound effects
+        initSoundEffects();
         
         // Set up event listeners
         setupEventListeners();
@@ -204,6 +220,28 @@ function initBackgroundMusic() {
         });
 }
 
+// Initialize sound effects
+function initSoundEffects() {
+    // Preload sound effects
+    const bubblePopSound = document.getElementById('bubble-pop-sound');
+    const bubbleCreateSound = document.getElementById('bubble-create-sound');
+    
+    // Set initial volume for both sounds
+    if (bubblePopSound) {
+        bubblePopSound.volume = 0.7;
+        // Attempt to preload by loading metadata
+        bubblePopSound.load();
+    }
+    
+    if (bubbleCreateSound) {
+        bubbleCreateSound.volume = 0.3; // Lower volume for creation sound
+        // Attempt to preload by loading metadata
+        bubbleCreateSound.load();
+    }
+    
+    console.log("Sound effects initialized");
+}
+
 function setupBedroomFrame() {
     // Get the selected bedroom image from localStorage
     const bedroomImage = localStorage.getItem('selectedBedroom');
@@ -241,11 +279,11 @@ function initGraphics() {
     // scene.fog = new THREE.FogExp2(bgSettings.fogColor, bgSettings.fogDensity);
     
     // Create camera with a more direct view of the game area
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.2, 2000);
+    camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.2, 2000);
     
     // Position the camera to face the game more directly, but lower down
-    camera.position.set(100, -20, 50); // Lower Y position for a better view
-    camera.lookAt(0, -35, 0); // Adjust lookAt point to match lower position
+    camera.position.set(1, 1, 100); // Raise Y position by 2 units and reduce Z slightly for more zoom
+    camera.lookAt(0, -45, 0); // Keep lookAt point the same
     
     // Create renderer with alpha transparency enabled
     renderer = new THREE.WebGLRenderer({ 
@@ -263,12 +301,12 @@ function initGraphics() {
     
     // Create orbit controls with limits and set target to match camera lookAt
     controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, -30, 0); // Set the orbit target to match the lookAt point
+    controls.target.set(0, -35, 0); // Set the orbit target to match the lookAt point
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.screenSpacePanning = false;
-    controls.minDistance = 20;
-    controls.maxDistance = 100;
+    controls.minDistance = 15; // Decreased from 20 for closer zoom
+    controls.maxDistance = 55; // Decreased from 100 for closer zoom
     controls.maxPolarAngle = Math.PI / 2;
     
     // Create lighting
@@ -637,8 +675,7 @@ function createTank(Ammo) {
     // Red plastic material for top and bottom
     const tankRedMaterial = new THREE.MeshPhongMaterial({
         color: 0xdd1111, // Bright red
-        transparent: true,
-        opacity: 0.8,     // Slightly transparent
+        transparent: false, // No longer transparent
         shininess: 80,
         specular: 0xffffff // Stronger specular highlight
     });
@@ -1061,55 +1098,75 @@ function createBubble(Ammo) {
 
 // Function to create a bubble pop effect
 function createBubblePop(position, color, size) {
-    // Create a group of small spheres that expand outward
-    const particleCount = 8;
-    const particles = [];
-    
-    for (let i = 0; i < particleCount; i++) {
-        // Create a small sphere
-        const particleGeometry = new THREE.SphereGeometry(size * 0.2, 8, 8);
-        const particleMaterial = new THREE.MeshPhongMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.7,
-            shininess: 90
-        });
+    // Play pop sound immediately - moved to the beginning of the function
+    const bubblePopSound = document.getElementById('bubble-pop-sound');
+    if (bubblePopSound) {
+        // Random volume for variety
+        bubblePopSound.volume = 0.6 + Math.random() * 0.2;
         
-        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        // Reset sound if it's already playing
+        bubblePopSound.currentTime = 0;
+        
+        // Play the sound
+        const playPromise = bubblePopSound.play();
+        
+        // Handle potential play() promise rejection (browsers may block autoplay)
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                console.log("Audio play prevented: ", error);
+            });
+        }
+    }
+    
+    // Create bubble pop particles
+    const particleCount = Math.floor(5 + size * 2); // Scale particles with bubble size
+    const particles = [];
+    const particleGeometry = new THREE.SphereGeometry(0.05, 4, 4);
+    const particleMaterial = new THREE.MeshBasicMaterial({ 
+        color: color,
+        transparent: true,
+        opacity: 0.7
+    });
+    
+    // Create particles
+    for (let i = 0; i < particleCount; i++) {
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial.clone());
         particle.position.copy(position);
         
-        // Set random direction vector
-        const direction = new THREE.Vector3(
-            Math.random() * 2 - 1,
-            Math.random() * 2 - 1,
-            Math.random() * 2 - 1
-        ).normalize();
+        // Add random offset
+        particle.position.x += (Math.random() - 0.5) * 0.1;
+        particle.position.y += (Math.random() - 0.5) * 0.1;
+        particle.position.z += (Math.random() - 0.5) * 0.1;
         
-        particle.userData.direction = direction;
-        particle.userData.speed = 0.2 + Math.random() * 0.3;
-        particle.userData.creationTime = Date.now();
-        particle.userData.lifetime = 500 + Math.random() * 300; // 0.5-0.8 seconds
+        // Set random velocity
+        particle.userData.velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * (0.2 + size * 0.1),
+            (Math.random() - 0.5) * (0.2 + size * 0.1),
+            (Math.random() - 0.5) * (0.2 + size * 0.1)
+        );
+        
+        // Set particle metadata
+        particle.userData.lifetime = 0.5 + Math.random() * 0.5; // Seconds
+        particle.userData.age = 0;
         
         scene.add(particle);
         particles.push(particle);
     }
     
-    // Animation to expand particles and fade them out
+    // Animation loop for particles
     const animateParticles = function() {
         const currentTime = Date.now();
         let allDone = true;
         
         for (let i = 0; i < particles.length; i++) {
             const particle = particles[i];
-            const elapsed = currentTime - particle.userData.creationTime;
+            const elapsed = currentTime - particle.userData.age;
             
             if (elapsed < particle.userData.lifetime) {
                 allDone = false;
                 
                 // Move particle outward
-                particle.position.add(
-                    particle.userData.direction.clone().multiplyScalar(particle.userData.speed)
-                );
+                particle.position.add(particle.userData.velocity);
                 
                 // Scale down and fade out
                 const progress = elapsed / particle.userData.lifetime;
@@ -1133,7 +1190,9 @@ function createBubblePop(position, color, size) {
 // Completely rewrite the bubble spawning function for consistent water-like stream
 function spawnBubblesInFlow() {
     // If flow is not active, stop spawning
-    if (!bubbleFlowActive) return;
+    if (!bubbleFlowActive) {
+        return;
+    }
     
     const currentTime = Date.now();
     
@@ -1753,162 +1812,108 @@ function updatePhysics(deltaTime) {
 
 // Add a new function to check if rings are on pegs and stabilize them
 function checkRingsOnPegs() {
-    // Skip if no pegs or rings
-    if (!pegs || pegs.length === 0 || !rigidBodies || rigidBodies.length === 0) return;
+    // Filter out any undefined toruses first
+    const validToruses = toruses.filter(torus => torus && torus.mesh);
     
-    console.log("Checking for rings on pegs...");
+    let toroids = validToruses.map(torus => {
+        return {
+            object: torus.mesh,
+            position: torus.mesh.position,
+            rotation: torus.mesh.rotation,
+            onPeg: torus.onPeg,
+            pegIndex: torus.pegIndex
+        };
+    });
     
-    // Check each ring (skip the first rigidBody which is typically the ground)
-    for (let i = 1; i < rigidBodies.length; i++) {
-        const ring = rigidBodies[i];
+    // Only check rings not already on pegs
+    const ringsToCheck = toroids.filter(t => !t.onPeg);
+    
+    if (ringsToCheck.length === 0) return; // All rings are already on pegs
+    
+    let updatedScore = false;
+    
+    // Check each peg
+    for (let i = 0; i < pegs.length; i++) {
+        const peg = pegs[i];
+        if (!peg || !peg.mesh) continue; // Skip invalid pegs
         
-        // Skip non-torus objects and objects that are already marked as on a peg
-        if (!ring.geometry || !ring.geometry.type || ring.geometry.type !== 'TorusGeometry') continue;
+        const pegTop = peg.mesh.position.clone();
+        pegTop.y += 1.5; // Top of peg
         
-        // For each peg, check if the ring is positioned on it
-        for (let j = 0; j < pegs.length; j++) {
-            const peg = pegs[j];
-            const pegPos = peg.position;
-            const ringPos = ring.position;
+        // Check each ring not already on a peg
+        for (let j = 0; j < ringsToCheck.length; j++) {
+            const ring = ringsToCheck[j];
             
-            // Check if ring is horizontally aligned with a peg
-            const horizontalDistance = Math.sqrt(
-                Math.pow(ringPos.x - pegPos.x, 2) + 
-                Math.pow(ringPos.z - pegPos.z, 2)
+            // Skip if this ring is already marked as on a peg
+            if (ring.onPeg) continue;
+            
+            // Check horizontal distance between ring and peg
+            const horizontalDist = Math.sqrt(
+                Math.pow(ring.position.x - pegTop.x, 2) +
+                Math.pow(ring.position.z - pegTop.z, 2)
             );
             
-            // If ring is centered over a peg with small tolerance
-            if (horizontalDistance < PEG_DETECTION_DISTANCE) {
-                console.log(`Ring #${i} is horizontally aligned with Peg #${j} (distance: ${horizontalDistance.toFixed(2)})`);
-                
-                // Check vertical position relative to peg top
-                // This varies depending on which peg and ring height, so we use approximate values
-                const pegHeight = (j === 0) ? 2.0 : 3.5; // Approximate heights from createPegs function
-                const pegTop = pegPos.y + pegHeight / 2;
-                
-                // Get the torus tube radius and major radius for better height detection
-                const tubeRadius = ring.geometry.parameters.tube || 0.3; // Default if not found
-                const majorRadius = ring.geometry.parameters.radius || 1.0; // Default if not found
-                
-                // Log the ring's position relative to the peg
-                console.log(`Ring position Y: ${ringPos.y.toFixed(2)}, Peg top Y: ${pegTop.toFixed(2)}`);
-                
-                // MUCH more forgiving height check:
-                // 1. Allow rings to be positioned quite a bit below the peg (down to pegTop - 2 units)
-                // 2. Keep the upper limit for stacking
-                const lowerLimit = pegTop - 2.0; // Extremely forgiving - allow rings to be well below the peg
-                const upperLimit = pegTop + 10; // Keep the existing upper limit for stacked rings
-                
-                // Check if ring is within the extremely forgiving height range
-                if (ringPos.y >= lowerLimit && ringPos.y <= upperLimit) {
-                    console.log(`Ring #${i} is at the correct height for Peg #${j}!`);
+            // Check vertical position (ring should be above peg top)
+            const verticalPos = ring.position.y;
+            
+            // Check if ring is relatively level
+            const xRot = Math.abs(ring.rotation.x);
+            const zRot = Math.abs(ring.rotation.z);
+            const isLevel = xRot < 0.3 && zRot < 0.3; // Allow some tilt
+            
+            // Get ring's rigid body for velocity check
+            const ringBody = rigidBodies.find(rb => rb && rb.mesh === ring.object);
+            const isSlowEnough = ringBody ? ringBody.getLinearVelocity().length() < 1 : false;
+            
+            // Check if ring is on this peg
+            if (
+                horizontalDist < 0.7 && // Ring is centered on peg
+                verticalPos > pegTop.y - 0.3 && // Ring is at right height
+                verticalPos < pegTop.y + 0.8 && // Not too high
+                isLevel && // Ring is approximately level
+                isSlowEnough // Ring has stopped moving
+            ) {
+                // Find index of this ring in the toruses array
+                const ringIndex = validToruses.findIndex(t => t.mesh === ring.object);
+                if (ringIndex !== -1) {
+                    // Mark this ring as on a peg
+                    validToruses[ringIndex].onPeg = true;
+                    validToruses[ringIndex].pegIndex = i;
+                    ring.onPeg = true;
+                    ring.pegIndex = i;
                     
-                    // Ring is on peg! Stabilize it
+                    // Increment counter for rings on pegs
+                    ringsOnPegs++;
+                    updatedScore = true;
                     
-                    // If already stabilized, skip
-                    if (ring.userData.isOnPeg) {
-                        console.log(`Ring #${i} is already stabilized on Peg #${j}`);
-                        continue;
-                    }
+                    // Visual and audio feedback
+                    const celebrationColor = new THREE.Color(
+                        Math.random(), Math.random(), Math.random()
+                    );
+                    ring.object.material.emissive = celebrationColor;
                     
-                    // Mark as on peg
-                    ring.userData.isOnPeg = true;
-                    console.log(`SUCCESS: Ring #${i} is now stabilized on Peg #${j}!`);
-                    
-                    // Get physics body
-                    const body = ring.userData.physicsBody;
-                    if (body) {
-                        // Make it more stable on the peg
-                        
-                        // Increase friction significantly
-                        body.setFriction(1.0); // Max friction (default was likely 0.5)
-                        
-                        // Reduce bounciness
-                        body.setRestitution(0.0); // No bounce
-                        
-                        // Increase angular damping to limit rotation
-                        body.setDamping(0.8, 0.9); // High linear and angular damping
-                        
-                        // Apply a small downward force to keep it seated
-                        body.applyCentralForce(new Ammo.btVector3(0, -2.0, 0));
-                        
-                        // Make it less affected by bubble hits
-                        ring.userData.bubbleResistance = 0.3; // Will only apply 30% of normal bubble force
-                        
-                        // Optional: Add visual feedback (subtle glow effect or color change)
-                        if (ring.material) {
-                            // Store original color
-                            if (!ring.userData.originalColor) {
-                                ring.userData.originalColor = ring.material.color.clone();
-                            }
-                            
-                            // Add subtle highlight
-                            ring.material.emissive = new THREE.Color(0x222222);
-                            ring.material.needsUpdate = true;
-                        }
-                    }
-                } else {
-                    console.log(`Ring #${i} is aligned with Peg #${j} but NOT at the correct height. Valid range: ${lowerLimit.toFixed(2)} to ${upperLimit.toFixed(2)}`);
-                    
-                    // If ring was previously on peg but now isn't, reset properties
-                    if (ring.userData.isOnPeg) {
-                        console.log(`Ring #${i} was knocked off Peg #${j}! Resetting properties.`);
-                        // Remove on-peg status
-                        ring.userData.isOnPeg = false;
-                        
-                        // Get physics body
-                        const body = ring.userData.physicsBody;
-                        if (body) {
-                            // Reset physics properties
-                            body.setFriction(0.5); // Normal friction
-                            body.setRestitution(0.2); // Normal bounce
-                            body.setDamping(0.3, 0.3); // Normal damping
-                            
-                            // Remove bubble resistance
-                            ring.userData.bubbleResistance = 1.0; // Normal bubble force impact
-                        }
-                        
-                        // Reset visual feedback
-                        if (ring.material && ring.userData.originalColor) {
-                            ring.material.emissive = new THREE.Color(0x000000);
-                            ring.material.needsUpdate = true;
-                        }
-                    }
+                    // Visual effect at the peg location
+                    createRingLandingEffect(pegTop, celebrationColor);
                 }
             }
         }
     }
     
-    // Count rings on pegs
-    const ringsOnPegs = rigidBodies.filter(obj => obj.userData && obj.userData.isOnPeg).length;
-    console.log(`Total rings currently on pegs: ${ringsOnPegs}`);
-    
-    // Update the score display
-    updateScore();
+    // Update score if any changes occurred
+    if (updatedScore) {
+        updateScore();
+    }
 }
 
 function updateScore() {
-    // Count rings on pegs
-    const ringsOnPegs = rigidBodies.filter(obj => obj.userData && obj.userData.isOnPeg).length;
-    
-    // Update the score
-    score = ringsOnPegs;
-    
-    // Update high score if needed
-    if (score > highScore) {
-        highScore = score;
-        // Add a flash effect to the score display for new high scores
-        scoreElement.style.backgroundColor = 'rgba(0, 128, 0, 0.7)'; // Green background
-        setTimeout(() => {
-            scoreElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)'; // Back to normal
-        }, 500);
+    // Update the score counter
+    const scoreElement = document.getElementById('score');
+    if (scoreElement) {
+        scoreElement.textContent = ringsOnPegs;
     }
     
-    // Update the score display
-    scoreElement.textContent = `Score: ${score} | High: ${highScore}`;
-    
-    // Add celebration for high achievements
-    if (score >= 3 && score === highScore) {
+    // Check if all rings are landed or if we've reached a milestone
+    if (ringsOnPegs >= toruses.length) {
         showCelebration();
     }
 }
@@ -1951,4 +1956,82 @@ function animate() {
     updatePhysics(deltaTime);
     renderer.render(scene, camera);
     controls.update();
+}
+
+function createRingLandingEffect(position, color) {
+    // Create particles for a celebration effect
+    const particleCount = 15;
+    const particles = [];
+    const particleGeometry = new THREE.SphereGeometry(0.1, 6, 6);
+    const particleMaterial = new THREE.MeshBasicMaterial({ 
+        color: color,
+        transparent: true,
+        opacity: 0.8
+    });
+    
+    // Create particles
+    for (let i = 0; i < particleCount; i++) {
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial.clone());
+        particle.position.copy(position);
+        
+        // Set random velocity (mostly upward)
+        particle.userData.velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.4,
+            Math.random() * 0.8,
+            (Math.random() - 0.5) * 0.4
+        );
+        
+        // Set particle metadata
+        particle.userData.lifetime = 1 + Math.random(); // Seconds
+        particle.userData.age = 0;
+        
+        scene.add(particle);
+        particles.push(particle);
+    }
+    
+    // Animation loop for particles
+    const animateParticles = function() {
+        const toRemove = [];
+        
+        for (let i = 0; i < particles.length; i++) {
+            const particle = particles[i];
+            
+            // Update age
+            particle.userData.age += clock.getDelta();
+            
+            // Check if particle should be removed
+            if (particle.userData.age >= particle.userData.lifetime) {
+                toRemove.push(particle);
+                continue;
+            }
+            
+            // Update position
+            particle.position.add(particle.userData.velocity);
+            
+            // Slow down (gravity)
+            particle.userData.velocity.y -= 0.05;
+            
+            // Fade out
+            const progress = particle.userData.age / particle.userData.lifetime;
+            particle.material.opacity = 0.8 * (1 - progress);
+            particle.scale.setScalar(1 - (progress * 0.5));
+        }
+        
+        // Remove expired particles
+        for (let i = 0; i < toRemove.length; i++) {
+            const index = particles.indexOf(toRemove[i]);
+            if (index !== -1) {
+                scene.remove(toRemove[i]);
+                particles.splice(index, 1);
+            }
+        }
+        
+        // Continue animation if particles remain
+        if (particles.length > 0) {
+            requestAnimationFrame(animateParticles);
+        }
+    };
+    
+    // Start animation
+    animateParticles();
 } 

@@ -547,6 +547,12 @@
             #track-info {
                 display: none !important; /* Hide on mobile to save space */
             }
+            
+            #score-counter {
+                bottom: 60px; /* Position above the controls on mobile */
+                font-size: 16px;
+                padding: 6px 12px;
+            }
         }
         
         /* Portrait orientation specific styles */
@@ -632,6 +638,22 @@
             display: block;
             opacity: 1;
         }
+
+        /* Score counter styles */
+        #score-counter {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 90;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
     </style>
 </head>
 <body>
@@ -641,6 +663,11 @@
     <!-- Audio player (hidden) -->
     <audio id="background-music" loop>
         <source src="music/dubmood.mp3" type="audio/mp3">
+    </audio>
+    
+    <!-- Sound effects -->
+    <audio id="bubble-pop-sound" preload="auto" playsinline>
+        <source src="sounds/a_single_bubble_pop.mp3" type="audio/mp3">
     </audio>
     
     <!-- Music controls -->
@@ -658,6 +685,9 @@
     <div id="bedroom-frame">
         <img id="bedroom-image" src="" alt="Character's bedroom">
         <div id="game-viewport"></div>
+        
+        <!-- Score counter -->
+        <div id="score-counter">Score: <span id="score">0</span></div>
         
         <!-- Floating pump button -->
         <div id="floating-pump">
