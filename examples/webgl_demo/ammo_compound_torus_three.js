@@ -45,14 +45,20 @@ const BUBBLE_LIFETIME = 2500; // All bubbles last 2.5 seconds
 // Add these global variables near the top with other globals
 let lastBubbleTime = 0;
 let bubbleFlowActive = false;
-let bubbleSpawnPosition = { x: 8, y: -17, z: -1 }; // Default spawn position
+let bubbleSpawnPosition = { x: 5.5, y: -15, z: 0 }; // Updated default spawn position
 let bubblePower = 10; // Default bubble power (will be controlled by slider)
+let bubbleAngle = 90; // Default angle is straight up (90 degrees)
 let isPumpButtonHeld = false; // Track if pump button is being held
 const MAX_PUMP_HOLD_TIME = 5000; // Maximum pump hold time in milliseconds (5 seconds)
 let pumpStartTime = 0; // When the pump button was pressed
 const BUBBLE_SPAWN_INTERVAL = 30; // Spawn bubbles more frequently (33 per second)
 const PEG_DETECTION_DISTANCE = 0.5; // Distance to detect if a ring is on a peg
 const PEG_STABILITY_CHECK_INTERVAL = 500; // Check if rings are on pegs every 500ms
+
+// Add these global variables near the top with the other globals
+let score = 0;
+let scoreElement;
+let highScore = 0;
 
 // Wait for DOM to load and Ammo to initialize
 document.addEventListener('DOMContentLoaded', function() {
@@ -123,6 +129,21 @@ function initGraphics() {
     
     // Set up FPS display
     fpsElement = document.getElementById('fps');
+    
+    // Set up score display
+    scoreElement = document.createElement('div');
+    scoreElement.id = 'score';
+    scoreElement.style.position = 'absolute';
+    scoreElement.style.top = '10px';
+    scoreElement.style.left = '10px';
+    scoreElement.style.background = 'rgba(0, 0, 0, 0.5)';
+    scoreElement.style.color = 'white';
+    scoreElement.style.padding = '5px';
+    scoreElement.style.borderRadius = '5px';
+    scoreElement.style.fontFamily = 'Arial, sans-serif';
+    scoreElement.style.fontSize = '16px';
+    scoreElement.textContent = 'Score: 0';
+    document.body.appendChild(scoreElement);
     
     // Handle window resize
     window.addEventListener('resize', onWindowResize);
@@ -196,8 +217,8 @@ function createFloor(Ammo) {
 function createSlope(Ammo) {
     // Get the tank's base position and dimensions
     const tankHeight = 40;
-    const tankWidth = 14;
-    const tankDepth = 2.8; // Updated to match new tank depth
+    const tankWidth = 18;
+    const tankDepth = 2.8;
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
     
     // Calculate tank bottom position - this is where we want to align the slope
@@ -259,28 +280,27 @@ function createSlope(Ammo) {
 }
 
 function createTank(Ammo) {
-    // Define tank dimensions
-    const tankWidth = 18;
-    const tankHeight = 40;
-    // Reduce the tank depth by 30%
-    const tankDepth = 2.8; // Was 4, reduced by 30%
+    const tankDepth = 2.8;  // Reduced by ~30% from original 4 units
+    const tankWidth = 18;  // Slightly narrower for toy-like proportions
+    const tankHeight = 40;  // Keep the same height
     const panelThickness = 0.05;
     
-    // Create materials for the tank - transparent plastic for sides
-    const tankClearMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0xffffff,  // White base for transparent material
-        transparent: true,
-        opacity: 0.2,
-        shininess: 100,
-        specular: 0x666666,
-        side: THREE.DoubleSide // Render both sides of geometry
+    // Create materials
+    
+    // Clear plastic material for main tank body
+    const tankClearMaterial = new THREE.MeshPhongMaterial({
+        color: 0xe0f4ff, // Extremely light blue tint
+        transparent: true, 
+        opacity: 0.1,
+        shininess: 0, // More glossy/plastic look
+        specular: 0x666666 // Light specular highlight
     });
     
-    // Red plastic for top and bottom
-    const tankRedMaterial = new THREE.MeshPhongMaterial({ 
+    // Red plastic material for top and bottom
+    const tankRedMaterial = new THREE.MeshPhongMaterial({
         color: 0xdd1111, // Bright red
         shininess: 70,
-        specular: 0x666666
+        specular: 0x666666 // Light specular highlight
     });
     
     // Position tank on the floor
@@ -324,6 +344,21 @@ function createTank(Ammo) {
     baseTransform.setIdentity();
     baseTransform.setOrigin(new Ammo.btVector3(baseMesh.position.x, baseMesh.position.y, baseMesh.position.z));
     createRigidBody(Ammo, baseMesh, baseShape, 0, baseTransform);
+    
+    // Add control knob on the right side
+    const knobGeometry = new THREE.CylinderGeometry(1.5, 1.5, 1, 16);
+    const knobMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0xeeeeee, // Off-white 
+        shininess: 80
+    });
+    const knobMesh = new THREE.Mesh(knobGeometry, knobMaterial);
+    // Rotate to make cylinder horizontal
+    knobMesh.rotation.z = Math.PI/2;
+    knobMesh.position.set(tankWidth/2 + 1.5, tankY - (tankHeight - 6)/2 - 2.5, 0);
+    scene.add(knobMesh);
+    
+    // Round the edges of the tank by adding cylindrical edge pieces
+    addRoundedEdges(Ammo, tankWidth, tankDepth, tankHeight, tankClearMaterial, tankY);
 }
 
 function createTankPanel(Ammo, material, dimensions, position) {
@@ -376,7 +411,7 @@ function addRoundedEdges(Ammo, width, depth, height, material, tankY) {
 
 function createPegs(Ammo) {
     // Get the tank's vertical position
-    const tankDepth = 2.8; // Updated to match new tank depth
+    const tankDepth = 2.8;
     const tankHeight = 40;
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
     
@@ -406,7 +441,7 @@ function createPegs(Ammo) {
         if (i === 0) {
             x = -5; // Red peg position unchanged
         } else {
-            x = 3; // Green peg moved from 5 to 3 (2 units left)
+            x = 1; // Green peg moved from 5 to 3 (2 units left)
         }
         
         // Stagger the heights - one higher, one lower
@@ -415,8 +450,7 @@ function createPegs(Ammo) {
         // Create material for this peg with matching color
         const pegMaterial = new THREE.MeshPhongMaterial({ 
             color: pegColors[i],
-            transparent: true,
-            opacity: 0.7, // Semi-transparent
+        
             shininess: 90,
             specular: 0x666666,
             side: THREE.DoubleSide, // Render both sides of geometry
@@ -451,29 +485,29 @@ function createPegs(Ammo) {
         pegGroup.add(baseMesh);
         
         // Create a custom compound shape for this particular peg
-        const compoundShape = new Ammo.btCompoundShape();
-        
+    const compoundShape = new Ammo.btCompoundShape();
+    
         // Add pin shape - vertical cylinder with adjusted height
         const pinShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.15, pinLength/2, 0.15)); // Half-height
-        const pinTransform = new Ammo.btTransform();
-        pinTransform.setIdentity();
-        pinTransform.setOrigin(new Ammo.btVector3(0, 2.05, 0));
-        compoundShape.addChildShape(pinTransform, pinShape);
-        
-        // Add pin cap - sphere at top
-        const capShape = new Ammo.btSphereShape(0.15);
-        const capTransform = new Ammo.btTransform();
-        capTransform.setIdentity();
+    const pinTransform = new Ammo.btTransform();
+    pinTransform.setIdentity();
+    pinTransform.setOrigin(new Ammo.btVector3(0, 2.05, 0));
+    compoundShape.addChildShape(pinTransform, pinShape);
+    
+    // Add pin cap - sphere at top
+    const capShape = new Ammo.btSphereShape(0.15);
+    const capTransform = new Ammo.btTransform();
+    capTransform.setIdentity();
         capTransform.setOrigin(new Ammo.btVector3(0, 2.05 + pinLength/2, 0));
-        compoundShape.addChildShape(capTransform, capShape);
-        
-        // Add base shape - flatter cylinder
-        const baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.8, 0.1, 0.8)); // Smaller, flatter base
-        const baseTransform = new Ammo.btTransform();
-        baseTransform.setIdentity();
-        baseTransform.setOrigin(new Ammo.btVector3(0, 0.3, 0));
-        compoundShape.addChildShape(baseTransform, baseShape);
-        
+    compoundShape.addChildShape(capTransform, capShape);
+    
+    // Add base shape - flatter cylinder
+    const baseShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.8, 0.1, 0.8)); // Smaller, flatter base
+    const baseTransform = new Ammo.btTransform();
+    baseTransform.setIdentity();
+    baseTransform.setOrigin(new Ammo.btVector3(0, 0.3, 0));
+    compoundShape.addChildShape(baseTransform, baseShape);
+    
         // Create rigid body
         const transform = new Ammo.btTransform();
         transform.setIdentity();
@@ -486,7 +520,7 @@ function createPegs(Ammo) {
 
 function createToruses(Ammo, count) {
     // Get the tank's vertical position
-    const tankDepth = 4;
+    const tankDepth = 2.8;
     const tankHeight = 40;
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
     
@@ -592,7 +626,7 @@ function createCompoundTorusShape(Ammo) {
 
 function createBubble(Ammo) {
     // Get the tank's vertical position
-    const tankDepth = 2.8; // Updated to match new tank depth
+    const tankDepth = 2.8;
     const tankHeight = 40;
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
     
@@ -636,8 +670,7 @@ function createBubble(Ammo) {
         const bubbleGeometry = new THREE.SphereGeometry(size, 16, 16);
         const bubbleMaterial = new THREE.MeshPhongMaterial({
             color: color,
-            transparent: true,
-            opacity: 0.6,         // Higher base opacity for water-like effect
+
             shininess: 90,
             specular: 0x666666
         });
@@ -784,7 +817,7 @@ function spawnBubblesInFlow() {
         
         // Get the tank dimensions
         const tankWidth = 18;
-        const tankDepth = 2.8; // Updated to match new tank depth
+        const tankDepth = 2.8;
         const tankHeight = 40;
         const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
         
@@ -833,19 +866,28 @@ function spawnBubblesInFlow() {
                 const normY = dirY / length;
                 const normZ = dirZ / length;
                 
+                // Calculate x-component based on angle (convert from degrees to radians)
+                const angleRadians = (bubbleAngle * Math.PI) / 180;
+                
+                // Angle affects the X and Y components
+                // At 90 degrees, all force is upward (Y)
+                // At angles < 90, force has a negative X component (left)
+                // At angles > 90, force has a positive X component (right)
+                const angleX = Math.cos((90 - bubbleAngle) * Math.PI / 180);
+                const angleY = Math.sin(angleRadians);
+                
                 // Activate bubble physics
                 body.activate();
                 
-                // Apply consistent force modified only by power slider
-                // No randomness in the base force for predictable water stream
+                // Apply consistent force modified by power slider and angle
                 const baseForce = 8; // Constant base force
                 const powerFactor = bubblePower / 10; // Power slider effect
                 
-                // Apply force in consistent arc trajectory
+                // Apply force with angle adjustment
                 body.applyCentralForce(new Ammo.btVector3(
-                    baseForce * normX * powerFactor,
-                    baseForce * normY * 2.2 * powerFactor, // Stronger upward component for nice arc
-                    baseForce * normZ * powerFactor
+                    baseForce * angleX * powerFactor, // X force based on angle
+                    baseForce * angleY * 2.2 * powerFactor, // Y force (upward) adjusted for angle
+                    baseForce * normZ * powerFactor // Z stays the same
                 ));
                 
                 // Mark as active
@@ -1093,6 +1135,13 @@ function setupEventListeners() {
         bubblePower = value;
     });
     
+    // Add bubble angle slider listener
+    document.getElementById('bubble-angle').addEventListener('input', function() {
+        const value = parseInt(this.value);
+        document.getElementById('bubble-angle-value').textContent = value + '°';
+        bubbleAngle = value;
+    });
+    
     // Add pump bubbles button with mousedown/mouseup events for hold behavior
     const pumpButton = document.getElementById('pump-bubbles');
     
@@ -1313,12 +1362,21 @@ function checkRingsOnPegs() {
                 const pegHeight = (j === 0) ? 2.0 : 3.5; // Approximate heights from createPegs function
                 const pegTop = pegPos.y + pegHeight / 2;
                 
+                // Get the torus tube radius and major radius for better height detection
+                const tubeRadius = ring.geometry.parameters.tube || 0.3; // Default if not found
+                const majorRadius = ring.geometry.parameters.radius || 1.0; // Default if not found
+                
                 // Log the ring's position relative to the peg
                 console.log(`Ring position Y: ${ringPos.y.toFixed(2)}, Peg top Y: ${pegTop.toFixed(2)}`);
                 
-                // Check if ring is at an appropriate height range for a peg
-                // The check allows for rings to be stacked
-                if (ringPos.y >= pegTop && ringPos.y <= pegTop + 10) {
+                // MUCH more forgiving height check:
+                // 1. Allow rings to be positioned quite a bit below the peg (down to pegTop - 2 units)
+                // 2. Keep the upper limit for stacking
+                const lowerLimit = pegTop - 2.0; // Extremely forgiving - allow rings to be well below the peg
+                const upperLimit = pegTop + 10; // Keep the existing upper limit for stacked rings
+                
+                // Check if ring is within the extremely forgiving height range
+                if (ringPos.y >= lowerLimit && ringPos.y <= upperLimit) {
                     console.log(`Ring #${i} is at the correct height for Peg #${j}!`);
                     
                     // Ring is on peg! Stabilize it
@@ -1366,7 +1424,7 @@ function checkRingsOnPegs() {
                         }
                     }
                 } else {
-                    console.log(`Ring #${i} is aligned with Peg #${j} but NOT at the correct height`);
+                    console.log(`Ring #${i} is aligned with Peg #${j} but NOT at the correct height. Valid range: ${lowerLimit.toFixed(2)} to ${upperLimit.toFixed(2)}`);
                     
                     // If ring was previously on peg but now isn't, reset properties
                     if (ring.userData.isOnPeg) {
@@ -1400,6 +1458,66 @@ function checkRingsOnPegs() {
     // Count rings on pegs
     const ringsOnPegs = rigidBodies.filter(obj => obj.userData && obj.userData.isOnPeg).length;
     console.log(`Total rings currently on pegs: ${ringsOnPegs}`);
+    
+    // Update the score display
+    updateScore();
+}
+
+function updateScore() {
+    // Count rings on pegs
+    const ringsOnPegs = rigidBodies.filter(obj => obj.userData && obj.userData.isOnPeg).length;
+    
+    // Update the score
+    score = ringsOnPegs;
+    
+    // Update high score if needed
+    if (score > highScore) {
+        highScore = score;
+        // Add a flash effect to the score display for new high scores
+        scoreElement.style.backgroundColor = 'rgba(0, 128, 0, 0.7)'; // Green background
+        setTimeout(() => {
+            scoreElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)'; // Back to normal
+        }, 500);
+    }
+    
+    // Update the score display
+    scoreElement.textContent = `Score: ${score} | High: ${highScore}`;
+    
+    // Add celebration for high achievements
+    if (score >= 3 && score === highScore) {
+        showCelebration();
+    }
+}
+
+function showCelebration() {
+    // Create a celebration message
+    const celebration = document.createElement('div');
+    celebration.id = 'celebration';
+    celebration.style.position = 'absolute';
+    celebration.style.top = '50%';
+    celebration.style.left = '50%';
+    celebration.style.transform = 'translate(-50%, -50%)';
+    celebration.style.fontSize = '32px';
+    celebration.style.fontWeight = 'bold';
+    celebration.style.color = '#ffcc00';
+    celebration.style.textShadow = '0 0 10px rgba(255, 204, 0, 0.7)';
+    celebration.style.opacity = '0';
+    celebration.style.transition = 'opacity 0.5s';
+    celebration.textContent = 'PERFECT SCORE!';
+    document.body.appendChild(celebration);
+    
+    // Animate the celebration
+    setTimeout(() => {
+        celebration.style.opacity = '1';
+    }, 100);
+    
+    setTimeout(() => {
+        celebration.style.opacity = '0';
+    }, 3000);
+    
+    setTimeout(() => {
+        document.body.removeChild(celebration);
+    }, 3500);
 }
 
 function animate() {
