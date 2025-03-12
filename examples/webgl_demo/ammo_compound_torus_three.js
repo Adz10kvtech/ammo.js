@@ -72,7 +72,7 @@ let torusCompoundShape;
 // Add these global variables at the top of the file near other global declarations
 let activeBubbles = [];
 let bubbleLifetimes = [];
-const BUBBLE_LIFETIME = 2500; // All bubbles last 2.5 seconds
+const BUBBLE_LIFETIME = 3500; // All bubbles last 2.5 seconds
 let bubbleImmunityTimes = []; // Add this new array to track immunity time for each bubble
 const BUBBLE_IMMUNITY_PERIOD = 200; // Immunity period in milliseconds after spawning
 
@@ -1006,7 +1006,7 @@ function createBubble(Ammo) {
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
     
     // Define bubble parameters
-    const bubbleCount = 32; // Increased for more consistent stream
+    const bubbleCount = 64; // Increased for more consistent stream
     // Use consistent small sizes for water-like bubbles
     const bubbleSizes = [
         0.25, 0.25, 0.25, 0.25,   // Very small bubbles
@@ -1073,7 +1073,7 @@ function createBubble(Ammo) {
         transform.setOrigin(new Ammo.btVector3(posX, posY, posZ));
         
         // All bubbles have identical physical properties
-        const mass = 0.1;            // Low consistent mass
+        const mass = 0.07;            // Low consistent mass
         const linearDamping = 0.2;    // Low damping for consistent flow
         const angularDamping = 0.2;
         
