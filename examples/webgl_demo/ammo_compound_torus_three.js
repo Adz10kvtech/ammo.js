@@ -8,6 +8,14 @@ let fpsElement;
 let backgroundMusic;
 let isMusicPlaying = false;
 
+// Radio variables
+let radioPlayer;
+let isRadioPlaying = false;
+let currentRadioStation = 'none';
+let hasInternetConnection = true;
+let isCheckingInternetConnection = false;
+let preferRadio = true; // User preference for radio vs local music
+
 // Character selection variables
 let selectedCharacter = null;
 let selectedBedroom = null;
@@ -106,8 +114,83 @@ let cameraShakeOffset = null;
 let cameraShakeIntensity = 0.01; // Reduced from 0.3 for much more subtle shake
 let cameraShakeTimer = 0; // Add a timer to make shake less constant
 
+// Add these global variables near the other globals
+let pegLayout = 'default';
+let selectedPeg = null;
+let isDraggingPeg = false;
+let pegBeingMoved = null;
+let originalPegPositions = [];
+let pegColors = [
+    0xff3333, // Red
+    0x33ff33, // Green
+    0x3333ff, // Blue
+    0xffff33, // Yellow
+    0xff33ff, // Magenta
+];
+
+// Add a global function to reset rings that can be called from anywhere
+window.resetRings = function() {
+    console.log("Global resetRings function called");
+    if (typeof dropRingsOnSlope === 'function') {
+        dropRingsOnSlope();
+        if (typeof applyCameraShake === 'function') {
+            applyCameraShake(0.5, 500);
+        }
+        return true;
+    } else {
+        console.error("dropRingsOnSlope function not available");
+        return false;
+    }
+};
+
+// Also add an inline onclick attribute to the button
+document.addEventListener('DOMContentLoaded', function() {
+    const resetButton = document.getElementById('reset-rings-button');
+    if (resetButton) {
+        resetButton.setAttribute('onclick', 'window.resetRings(); this.style.transform="scale(0.9)"; setTimeout(function(){document.getElementById("reset-rings-button").style.transform="scale(1)";}, 200);');
+        console.log("Added onclick attribute to reset button");
+    }
+});
+
 // Wait for DOM to load and Ammo to initialize
 document.addEventListener('DOMContentLoaded', function() {
+    console.log("DOM content loaded, setting up additional event listeners");
+    
+    // Setup reset button listener that works even before the game fully initializes
+    const setupResetButton = function() {
+        const resetButton = document.getElementById('reset-rings-button');
+        if (resetButton) {
+            console.log("Found reset button in DOM, attaching event listener");
+            resetButton.addEventListener('click', function() {
+                console.log("Reset button clicked from DOM listener");
+                if (typeof dropRingsOnSlope === 'function') {
+                    dropRingsOnSlope();
+                    
+                    // Add a little shake effect when resetting
+                    if (typeof applyCameraShake === 'function') {
+                        applyCameraShake(0.5, 500);
+                    }
+                    
+                    // Visual feedback on button click
+                    this.style.transform = "scale(0.9)";
+                    setTimeout(() => {
+                        this.style.transform = "scale(1)";
+                    }, 200);
+                } else {
+                    console.error("dropRingsOnSlope function not available yet");
+                    alert("Game not fully loaded. Please wait and try again.");
+                }
+            });
+            console.log("Reset button event listener attached successfully");
+        } else {
+            console.log("Reset button not found in DOM, will try again shortly");
+            setTimeout(setupResetButton, 1000); // Try again in 1 second
+        }
+    };
+    
+    // Start trying to set up the reset button
+    setupResetButton();
+    
     // Set up character selection
     document.querySelectorAll('.character-card').forEach(card => {
         card.addEventListener('click', function() {
@@ -130,13 +213,40 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('zen-mode-button').addEventListener('click', function() {
         // Set game mode to Zen
         localStorage.setItem('gameMode', 'zen');
+        
+        // Get the selected peg layout
+        const pegLayoutSelect = document.getElementById('peg-layout');
+        const selectedLayout = pegLayoutSelect.value;
+        localStorage.setItem('pegLayout', selectedLayout);
+        
         startDemo();
     });
     
     document.getElementById('arcade-mode-button').addEventListener('click', function() {
         // Set game mode to Arcade
         localStorage.setItem('gameMode', 'arcade');
+        
+        // Get the selected peg layout
+        const pegLayoutSelect = document.getElementById('peg-layout');
+        const selectedLayout = pegLayoutSelect.value;
+        localStorage.setItem('pegLayout', selectedLayout);
+        
         startDemo();
+    });
+    
+    // Add an event listener for the radio preference checkbox
+    document.getElementById('prefer-radio').addEventListener('change', function() {
+        preferRadio = this.checked;
+        console.log(`Radio preference set to: ${preferRadio ? 'Radio' : 'Local Music'}`);
+        
+        // If we're not playing anything, start playing based on preference
+        if (!isMusicPlaying && !isRadioPlaying) {
+            if (preferRadio && hasInternetConnection) {
+                tryStartRadio();
+            } else {
+                startLocalMusic();
+            }
+        }
     });
 });
 
@@ -186,8 +296,10 @@ function startDemo() {
     });
 }
 
-// Initialize background music
+// Initialize background music and radio
 function initBackgroundMusic() {
+    console.log("Initializing background music system...");
+    
     // Array of available music tracks
     const musicTracks = [
         'dubmood.mp3',
@@ -201,37 +313,306 @@ function initBackgroundMusic() {
     
     // Randomly select a track
     const randomTrack = musicTracks[Math.floor(Math.random() * musicTracks.length)];
+    console.log("Selected random track:", randomTrack);
     
-    // Get the audio element
+    // Get the audio elements
     backgroundMusic = document.getElementById('background-music');
+    radioPlayer = document.getElementById('radio-player');
     
     // Update the source to the randomly selected track
     const sourceElement = backgroundMusic.querySelector('source');
     sourceElement.src = `music/${randomTrack}`;
+    console.log("Set background music source to:", sourceElement.src);
     
     // Need to reload the audio element after changing source
     backgroundMusic.load();
+    console.log("Local music loaded");
     
     // Display which track is playing
-    console.log(`Now playing: ${randomTrack}`);
+    console.log(`Local track ready: ${randomTrack}`);
     
     // Update the track name display
     document.getElementById('track-name').textContent = randomTrack.replace('.mp3', '');
     
     // Set initial volume
     backgroundMusic.volume = 0.5; // Set initial volume to 50%
+    radioPlayer.volume = 0.7; // Set initial volume to 70%
+    console.log("Set audio volumes - Background:", backgroundMusic.volume, "Radio:", radioPlayer.volume);
     
-    // Start playing music by default
+    // Add event listeners for radio player
+    console.log("Adding event listeners to radio player");
+    radioPlayer.addEventListener('error', handleRadioError);
+    radioPlayer.addEventListener('stalled', handleRadioStalled);
+    radioPlayer.addEventListener('waiting', handleRadioBuffering);
+    radioPlayer.addEventListener('playing', handleRadioPlaying);
+    
+    // Add debug listener for all events
+    const audioEvents = ['abort', 'canplay', 'canplaythrough', 'durationchange', 'emptied', 
+                         'ended', 'loadeddata', 'loadedmetadata', 'loadstart', 'pause', 
+                         'play', 'progress', 'ratechange', 'seeked', 'seeking', 'suspend', 
+                         'timeupdate', 'volumechange'];
+    
+    audioEvents.forEach(event => {
+        radioPlayer.addEventListener(event, () => {
+            console.log(`Radio event: ${event}`);
+        });
+    });
+    
+    // Check internet connection and start appropriate audio
+    console.log("Checking internet connection...");
+    checkInternetConnection().then(isConnected => {
+        hasInternetConnection = isConnected;
+        console.log("Internet connection check result:", isConnected ? "Connected" : "Not connected");
+        
+        // Update UI to reflect connection status
+        updateRadioUI();
+        
+        const preferRadioElement = document.getElementById('prefer-radio');
+        preferRadio = preferRadioElement.checked;
+        console.log("Radio preference from UI:", preferRadio);
+        
+        if (isConnected && preferRadio) {
+            console.log("Internet connected and radio preferred - trying radio");
+            // Try to start radio if there's internet and user prefers it
+            tryStartRadio();
+        } else {
+            console.log("Starting with local music", isConnected ? "(internet available but not preferred)" : "(no internet)");
+            // Fall back to local music
+            startLocalMusic();
+        }
+    });
+}
+
+// Function to check internet connection
+function checkInternetConnection() {
+    console.log("Starting internet connection check...");
+    
+    if (isCheckingInternetConnection) {
+        console.log("Already checking connection, returning cached result:", hasInternetConnection);
+        return Promise.resolve(hasInternetConnection);
+    }
+    
+    isCheckingInternetConnection = true;
+    console.log("Initiating new connection test");
+    
+    return new Promise(resolve => {
+        // Try to fetch a small resource from a reliable CDN
+        const startTime = Date.now();
+        console.log("Fetching test resource...");
+        
+        fetch('https://cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js', { 
+            mode: 'no-cors',
+            cache: 'no-store',
+            method: 'HEAD',
+            timeout: 5000
+        })
+        .then(() => {
+            const elapsedTime = Date.now() - startTime;
+            console.log(`Internet connection available (took ${elapsedTime}ms)`);
+            isCheckingInternetConnection = false;
+            resolve(true);
+        })
+        .catch(error => {
+            const elapsedTime = Date.now() - startTime;
+            console.log(`No internet connection (took ${elapsedTime}ms):`, error);
+            console.log("Error name:", error.name);
+            console.log("Error message:", error.message);
+            isCheckingInternetConnection = false;
+            resolve(false);
+        });
+        
+        // Set a timeout in case the fetch hangs
+        setTimeout(() => {
+            if (isCheckingInternetConnection) {
+                console.log('Connection check timed out after 5 seconds');
+                isCheckingInternetConnection = false;
+                resolve(false);
+            }
+        }, 5000);
+    });
+}
+
+// Function to update the radio UI based on connection status
+function updateRadioUI() {
+    const radioControls = document.getElementById('radio-controls');
+    const radioStationSelect = document.getElementById('radio-station');
+    const radioStatus = document.getElementById('radio-status');
+    const toggleRadioBtn = document.getElementById('toggle-radio');
+    
+    if (!hasInternetConnection) {
+        // Update UI to show offline status
+        radioStatus.textContent = 'Offline - Using Local Music';
+        radioStationSelect.disabled = true;
+        toggleRadioBtn.classList.add('offline');
+    } else {
+        // Update UI to show online status
+        radioStatus.textContent = isRadioPlaying ? 
+            document.getElementById('radio-station').options[document.getElementById('radio-station').selectedIndex].text : 
+            'Online - Ready';
+        radioStationSelect.disabled = false;
+        toggleRadioBtn.classList.remove('offline');
+    }
+    
+    // Update radio button appearance based on playback state
+    if (isRadioPlaying) {
+        toggleRadioBtn.classList.add('active');
+    } else {
+        toggleRadioBtn.classList.remove('active');
+    }
+}
+
+// Function to start local music
+function startLocalMusic() {
+    console.log("Starting local music playback...");
+    
+    // First ensure radio is off
+    if (isRadioPlaying) {
+        console.log("Radio was playing - stopping radio first");
+        radioPlayer.pause();
+        document.getElementById('toggle-radio').classList.remove('active');
+        isRadioPlaying = false;
+    }
+    
+    // Play local music
+    console.log("Attempting to play local music:", backgroundMusic.querySelector('source').src);
     backgroundMusic.play()
         .then(() => {
+            console.log("Local music started successfully!");
             isMusicPlaying = true;
             document.getElementById('toggle-music').textContent = '🔊';
+            document.getElementById('radio-status').textContent = 'Using Local Music';
         })
         .catch(e => {
-            // Handle autoplay restrictions (common in browsers)
-            console.log("Autoplay failed:", e);
-            // We'll leave the button in default state for user to press
+            console.log("Audio play failed:", e);
+            console.log("Error details:", e.name, e.message);
+            console.log("Audio element state:", {
+                paused: backgroundMusic.paused,
+                currentSrc: backgroundMusic.currentSrc,
+                readyState: backgroundMusic.readyState,
+                networkState: backgroundMusic.networkState,
+                error: backgroundMusic.error
+            });
+            document.getElementById('radio-status').textContent = 'Failed to play audio';
+            document.getElementById('toggle-music').textContent = '🔇';
+            isMusicPlaying = false;
         });
+}
+
+// Function to try starting radio
+function tryStartRadio() {
+    console.log("Attempting to start radio...");
+    
+    // First check if we have a selected station
+    const stationUrl = document.getElementById('radio-station').value;
+    console.log("Selected station URL:", stationUrl);
+    
+    if (stationUrl === 'none') {
+        // No station selected, just pick the first one
+        document.getElementById('radio-station').selectedIndex = 1; // Select the first station
+        console.log("No station selected - Auto-selecting first station");
+    }
+    
+    const selectedStationUrl = document.getElementById('radio-station').value;
+    console.log("Final station URL to play:", selectedStationUrl);
+    
+    // Only proceed if we have internet
+    if (hasInternetConnection && selectedStationUrl !== 'none') {
+        console.log("Internet available, proceeding with radio");
+        
+        // First ensure local music is off
+        if (isMusicPlaying) {
+            console.log("Local music was playing - pausing now");
+            backgroundMusic.pause();
+            document.getElementById('toggle-music').textContent = '🔇';
+            isMusicPlaying = false;
+        }
+        
+        // Update the radio source
+        const sourceElement = radioPlayer.querySelector('source');
+        sourceElement.src = selectedStationUrl;
+        console.log("Updated radio source to:", selectedStationUrl);
+        
+        // Reload and play
+        console.log("Loading radio stream...");
+        radioPlayer.load();
+        
+        console.log("Attempting to play radio stream...");
+        radioPlayer.play().then(() => {
+            console.log("Radio play promise resolved successfully!");
+            document.getElementById('toggle-radio').classList.add('active');
+            isRadioPlaying = true;
+            
+            // Get the station name from the selected option
+            const stationSelect = document.getElementById('radio-station');
+            const stationName = stationSelect.options[stationSelect.selectedIndex].text;
+            document.getElementById('radio-status').textContent = stationName;
+            
+            console.log(`Now playing radio: ${stationName}`);
+        }).catch(e => {
+            console.log("Radio play promise rejected:", e);
+            console.log("Error details:", e.name, e.message);
+            document.getElementById('radio-status').textContent = 'Failed to play radio';
+            document.getElementById('toggle-radio').classList.remove('active');
+            
+            // Fall back to local music
+            console.log("Falling back to local music");
+            startLocalMusic();
+        });
+    } else {
+        console.log("Cannot play radio: " + 
+                   (hasInternetConnection ? "Internet connected" : "No internet") + 
+                   ", Station: " + selectedStationUrl);
+        // Fall back to local music
+        startLocalMusic();
+    }
+}
+
+// Radio error handling functions
+function handleRadioError() {
+    console.log("Radio stream error!", radioPlayer.error);
+    console.log("Error code:", radioPlayer.error ? radioPlayer.error.code : "unknown");
+    console.log("Error message:", radioPlayer.error ? radioPlayer.error.message : "unknown");
+    
+    document.getElementById('radio-status').textContent = "Error - Using Local Music";
+    document.getElementById('toggle-radio').classList.remove('active');
+    isRadioPlaying = false;
+    
+    // Check internet connection again
+    checkInternetConnection().then(isConnected => {
+        hasInternetConnection = isConnected;
+        console.log("Internet check after radio error:", isConnected ? "Connected" : "Disconnected");
+        updateRadioUI();
+        
+        // Fall back to local music
+        if (!isMusicPlaying) {
+            console.log("Radio failed - Switching to local music");
+            startLocalMusic();
+        }
+    });
+}
+
+function handleRadioStalled() {
+    console.log("Radio stream stalled! Time:", new Date().toLocaleTimeString());
+    console.log("Current src:", radioPlayer.currentSrc);
+    console.log("Ready state:", radioPlayer.readyState);
+    document.getElementById('radio-status').textContent = "Stalled - Buffering...";
+}
+
+function handleRadioBuffering() {
+    console.log("Radio stream buffering... Time:", new Date().toLocaleTimeString());
+    console.log("Current src:", radioPlayer.currentSrc);
+    console.log("Ready state:", radioPlayer.readyState);
+    document.getElementById('radio-status').textContent = "Buffering...";
+}
+
+function handleRadioPlaying() {
+    console.log("Radio stream playing! Time:", new Date().toLocaleTimeString());
+    console.log("Current src:", radioPlayer.currentSrc);
+    console.log("Ready state:", radioPlayer.readyState);
+    
+    const stationSelect = document.getElementById('radio-station');
+    const stationName = stationSelect.options[stationSelect.selectedIndex].text;
+    document.getElementById('radio-status').textContent = stationName;
 }
 
 // Initialize sound effects
@@ -808,7 +1189,7 @@ function createTank(Ammo) {
     baseTransform.setOrigin(new Ammo.btVector3(baseMesh.position.x, baseMesh.position.y, baseMesh.position.z));
     createRigidBody(Ammo, baseMesh, baseShape, 0, baseTransform);
     
-    // Add control knob on the right side
+    // Add control knob on the front side
     const knobGeometry = new THREE.CylinderGeometry(1.5, 1.5, 1, 16);
     const knobMaterial = new THREE.MeshPhongMaterial({ 
         color: 0xeeeeee, // Off-white 
@@ -816,9 +1197,13 @@ function createTank(Ammo) {
     });
     const knobMesh = new THREE.Mesh(knobGeometry, knobMaterial);
     // Rotate to make cylinder horizontal
-    knobMesh.rotation.z = Math.PI/2;
-    knobMesh.position.set(tankWidth/2 + 1.5, tankY - (tankHeight - 6)/2 - 2.5, 0);
+    knobMesh.rotation.x = Math.PI/2;
+    knobMesh.position.set(8, tankY - (tankHeight - 3)/2 - 2.5, tankDepth/2 + 1.5);
     scene.add(knobMesh);
+    // Store the knob mesh in a global variable for animation
+    window.tankControlKnob = knobMesh;
+    // Store original position for reset
+    window.tankControlKnobOriginalPosition = knobMesh.position.z;
     
     // Round the edges of the tank by adding cylindrical edge pieces
     addRoundedEdges(Ammo, tankWidth, tankDepth, tankHeight, tankClearMaterial, tankY);
@@ -873,18 +1258,76 @@ function addRoundedEdges(Ammo, width, depth, height, material, tankY) {
 }
 
 function createPegs(Ammo) {
+    // Clear existing pegs array
+    pegs = [];
+    
     // Get the tank's vertical position
     const tankDepth = 2.8;
     const tankHeight = 40;
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
     
-    // Define matching colors for pegs to match torus colors
-    const pegColors = [
-        0xff3333, // Red
-        0x33ff33, // Green
-    ];
+    // Get the selected layout
+    pegLayout = localStorage.getItem('pegLayout') || 'default';
     
-    // Red plastic for bases (same as tank base)
+    // If custom layout is somehow selected, default to default layout
+    if (pegLayout === 'custom') {
+        pegLayout = 'default';
+        localStorage.setItem('pegLayout', 'default');
+    }
+    
+    // Define peg positions based on the layout
+    let pegPositions = [];
+    
+    switch(pegLayout) {
+        case 'challenge':
+            // Challenge mode: 3 pegs in a triangle formation
+            pegPositions = [
+                { x: -4.5, y: -4, color: 0 }, // Red peg (lower left)
+                { x: 1, y: 2, color: 1 },     // Green peg (upper right)
+                { x: -2, y: 6, color: 2 },    // Blue peg (top)
+            ];
+            break;
+        
+        case 'expert':
+            // Expert mode: 5 pegs in more complex arrangement
+            pegPositions = [
+                { x: -5, y: -2, color: 0 },   // Red peg (lower left)
+                { x: 5, y: -2, color: 1 },    // Green peg (lower right)
+                { x: 0, y: 4, color: 2 },     // Blue peg (middle top)
+                { x: -3, y: 8, color: 3 },    // Yellow peg (upper left)
+                { x: 3, y: 8, color: 4 },     // Magenta peg (upper right)
+            ];
+            break;
+            
+        case 'random':
+            // Random placement: 3-5 pegs in random locations
+            const numPegs = Math.floor(Math.random() * 3) + 3; // 3-5 pegs
+            
+            for (let i = 0; i < numPegs; i++) {
+                // Random position within tank bounds
+                const x = Math.random() * 14 - 7; // -7 to 7
+                const y = Math.random() * 16 - 6; // -6 to 10
+                
+                pegPositions.push({
+                    x: x,
+                    y: y,
+                    color: i % pegColors.length
+                });
+            }
+            break;
+            
+        default: // 'default'
+            // Original layout: 2 pegs
+            pegPositions = [
+                { x: -4.5, y: -4, color: 0 }, // Red peg (lower left)
+                { x: 1, y: 2, color: 1 },     // Green peg (upper right)
+            ];
+    }
+    
+    // Store original positions for reset functionality
+    originalPegPositions = JSON.parse(JSON.stringify(pegPositions));
+    
+    // Create a shared peg base material (red plastic)
     const baseMaterial = new THREE.MeshPhongMaterial({ 
         color: 0xdd1111, // Bright red
         shininess: 70
@@ -892,49 +1335,38 @@ function createPegs(Ammo) {
     
     // Create shared geometries
     const pinGeometry = new THREE.CylinderGeometry(0.15, 0.15, 2.5, 8); // Pin is thinner
-    
-    // Add rounded tops to pins
     const pinCapGeometry = new THREE.SphereGeometry(0.15, 8, 8);
     
-    // Create 2 pegs with staggered heights
-    for (let i = 0; i < 2; i++) {
-        // Position the pegs - move the green peg (i=1) 2 units to the left
-        let x = 0;
-        if (i === 0) {
-            x = -4.5; // Red peg position unchanged
-        } else {
-            x = 1; // Green peg moved from 5 to 3 (2 units left)
-        }
+    // Create pegs based on the positions
+    for (let i = 0; i < pegPositions.length; i++) {
+        const pos = pegPositions[i];
+        const colorIndex = pos.color;
         
-        // Stagger the heights - one higher, one lower
-        const heightOffset = (i === 0) ? -4 : 2; // First peg lower, second peg higher
-        
-        // Create material for this peg with matching color
+        // Create material for this peg with color
         const pegMaterial = new THREE.MeshPhongMaterial({ 
-            color: pegColors[i],
-        
+            color: pegColors[colorIndex],
             shininess: 90,
             specular: 0x666666,
-            side: THREE.DoubleSide, // Render both sides of geometry
-            depthWrite: false, // Improve transparency rendering
+            side: THREE.DoubleSide,
+            depthWrite: false,
             polygonOffset: true,
             polygonOffsetFactor: -4
         });
         
         // Create parent group
         const pegGroup = new THREE.Group();
-        pegGroup.position.set(x, tankY + heightOffset, 0);  // Position with height offset
+        pegGroup.position.set(pos.x, tankY + pos.y, 0);
+        pegGroup.userData.pegIndex = i;
+        pegGroup.userData.colorIndex = colorIndex;
         scene.add(pegGroup);
         pegs.push(pegGroup);
         
-        // Create pin part - adjust height based on staggering
-        const pinLength = 2.5 + (i === 0 ? -0.5 : 1); // First peg shorter, second peg longer
+        // Create pin part
+        const pinLength = 2.5 + (pos.y < 0 ? -0.5 : 1); // Lower pegs are shorter
         const customPinGeometry = new THREE.CylinderGeometry(0.15, 0.15, pinLength, 8);
         
         const pinMesh = new THREE.Mesh(customPinGeometry, pegMaterial);
-        // Adjust the pin vertical position based on which peg it is
-        // For the red peg (i===0), we need to lower the pin to connect with the base
-        const pinYPosition = i === 0 ? 1.3 : 2.05;
+        const pinYPosition = pos.y < 0 ? 1.3 : 2.05; // Adjust based on height
         pinMesh.position.set(0, pinYPosition, 0);
         pegGroup.add(pinMesh);
         
@@ -944,9 +1376,9 @@ function createPegs(Ammo) {
         pegGroup.add(pinCapMesh);
         
         // Set very low friction for the pin cap to make rings slide easily
-        const body = pinCapMesh.userData.physicsBody;
-        if (body) {
-            body.setFriction(0.05); // Very low friction value
+        const capBody = pinCapMesh.userData.physicsBody;
+        if (capBody) {
+            capBody.setFriction(0.05); // Very low friction value
         }
         
         // Create base part - flat disc
@@ -962,14 +1394,14 @@ function createPegs(Ammo) {
         const pinShape = new Ammo.btCylinderShape(new Ammo.btVector3(0.15, pinLength/2, 0.15)); // Half-height
     const pinTransform = new Ammo.btTransform();
     pinTransform.setIdentity();
-    pinTransform.setOrigin(new Ammo.btVector3(0, 2.05, 0));
+        pinTransform.setOrigin(new Ammo.btVector3(0, pinYPosition, 0));
     compoundShape.addChildShape(pinTransform, pinShape);
     
     // Add pin cap - sphere at top
     const capShape = new Ammo.btSphereShape(0.15);
     const capTransform = new Ammo.btTransform();
     capTransform.setIdentity();
-        capTransform.setOrigin(new Ammo.btVector3(0, 2.05 + pinLength/2, 0));
+        capTransform.setOrigin(new Ammo.btVector3(0, pinYPosition + pinLength/2, 0));
     compoundShape.addChildShape(capTransform, capShape);
     
     // Add base shape - flatter cylinder
@@ -982,11 +1414,17 @@ function createPegs(Ammo) {
         // Create rigid body
         const transform = new Ammo.btTransform();
         transform.setIdentity();
-        transform.setOrigin(new Ammo.btVector3(x, tankY + heightOffset, 0));
+        transform.setOrigin(new Ammo.btVector3(pos.x, tankY + pos.y, 0));
         
         const mass = 0; // static object
-        createRigidBody(Ammo, pegGroup, compoundShape, mass, transform);
+        const body = createRigidBody(Ammo, pegGroup, compoundShape, mass, transform);
+        pegGroup.userData.physicsBody = body;
+        
+        // No longer making pegs draggable since we removed that functionality
+        pegGroup.userData.isDraggable = false;
     }
+    
+    // Peg control UI is no longer needed
 }
 
 function createToruses(Ammo, count) {
@@ -1382,7 +1820,7 @@ function spawnBubblesInFlow() {
         // Check if spawn position is inside any solid objects
         const spawnClearance = 0.5; // Minimum clearance needed
         let spawnPositionClear = true;
-
+        
         // Try to find an inactive bubble
         let spawnedBubble = false;
         for (let i = 0; i < activeBubbles.length; i++) {
@@ -1664,6 +2102,26 @@ function setupEventListeners() {
         }
     });
 
+    // Reset rings button in bottom left
+    const resetButton = document.getElementById('reset-rings-button');
+    if (resetButton) {
+        console.log("Setting up reset button event listener in setupEventListeners");
+        resetButton.addEventListener('click', function() {
+            console.log("Reset button clicked!");
+            dropRingsOnSlope();
+            // Add a little shake effect when resetting
+            applyCameraShake(0.5, 500);
+            
+            // Visual feedback on button click
+            this.style.transform = "scale(0.9)";
+            setTimeout(() => {
+                this.style.transform = "scale(1)";
+            }, 200);
+        });
+    } else {
+        console.error("Reset button not found in DOM during setupEventListeners");
+    }
+
     // Music toggle button
     document.getElementById('toggle-music').addEventListener('click', function() {
         if (isMusicPlaying) {
@@ -1672,12 +2130,121 @@ function setupEventListeners() {
             this.textContent = '🔇';
             isMusicPlaying = false;
         } else {
-            // Play music
-            backgroundMusic.play().catch(e => console.log("Audio play failed:", e));
+            // User explicitly wants local music
+            preferRadio = false; // Update the preference when user directly clicks music button
             this.textContent = '🔊';
-            isMusicPlaying = true;
+            
+            // First ensure radio is off to avoid playing both
+            if (isRadioPlaying) {
+                radioPlayer.pause();
+                document.getElementById('toggle-radio').classList.remove('active');
+                document.getElementById('radio-status').textContent = 'Switched to Local Music';
+                isRadioPlaying = false;
+            }
+            
+            // Play music
+            startLocalMusic();
         }
     });
+    
+    // Radio toggle button
+    document.getElementById('toggle-radio').addEventListener('click', function() {
+        if (isRadioPlaying) {
+            // Pause radio
+            radioPlayer.pause();
+            this.classList.remove('active');
+            document.getElementById('radio-status').textContent = hasInternetConnection ? 'Online - Ready' : 'Offline';
+            isRadioPlaying = false;
+            
+            // If no music is playing, start local music
+            if (!isMusicPlaying) {
+                startLocalMusic();
+            }
+        } else {
+            // User explicitly wants radio
+            preferRadio = true;
+            
+            // Check internet connection first
+            checkInternetConnection().then(isConnected => {
+                hasInternetConnection = isConnected;
+                updateRadioUI();
+                
+                if (isConnected) {
+                    // Try to start radio
+                    tryStartRadio();
+                } else {
+                    // Alert user that we can't play radio
+                    alert("Internet connection not available. Using local music instead.");
+                    startLocalMusic();
+                }
+            });
+        }
+    });
+    
+    // Radio station selection
+    document.getElementById('radio-station').addEventListener('change', function() {
+        const stationUrl = this.value;
+        
+        // If radio is already playing, update the stream
+        if (isRadioPlaying && stationUrl !== 'none' && hasInternetConnection) {
+            // Update the radio source
+            const sourceElement = radioPlayer.querySelector('source');
+            sourceElement.src = stationUrl;
+            
+            // Reload and play
+            radioPlayer.load();
+            radioPlayer.play().then(() => {
+                // Get the station name from the selected option
+                const stationName = this.options[this.selectedIndex].text;
+                document.getElementById('radio-status').textContent = stationName;
+                
+                console.log(`Now playing radio: ${stationName}`);
+            }).catch(e => {
+                console.log("Radio play failed:", e);
+                
+                // Check internet again
+                checkInternetConnection().then(isConnected => {
+                    hasInternetConnection = isConnected;
+                    updateRadioUI();
+                    
+                    if (!isConnected) {
+                        alert("Internet connection lost. Using local music instead.");
+                        startLocalMusic();
+                    } else {
+                        alert("Unable to play radio stream. Please try another station.");
+                    }
+                });
+            });
+        } else if (stationUrl !== 'none' && hasInternetConnection && preferRadio && !isRadioPlaying) {
+            // User selected a station while radio isn't playing, but prefers radio
+            // Start playing the selected station
+            tryStartRadio();
+        }
+    });
+    
+    // Add periodic internet connection check (every 30 seconds)
+    setInterval(() => {
+        // Only check if radio is playing or user prefers radio
+        if (isRadioPlaying || (preferRadio && !isMusicPlaying)) {
+            checkInternetConnection().then(isConnected => {
+                // Only update if connection status has changed
+                if (hasInternetConnection !== isConnected) {
+                    hasInternetConnection = isConnected;
+                    updateRadioUI();
+                    
+                    // If we lost connection while radio was playing, switch to local music
+                    if (!isConnected && isRadioPlaying) {
+                        radioPlayer.pause();
+                        document.getElementById('toggle-radio').classList.remove('active');
+                        isRadioPlaying = false;
+                        
+                        alert("Internet connection lost. Switching to local music.");
+                        startLocalMusic();
+                    }
+                }
+            });
+        }
+    }, 30000); // Check every 30 seconds
     
     // Force strength slider
     document.getElementById('force-strength').addEventListener('input', function() {
@@ -1838,6 +2405,31 @@ function setupEventListeners() {
         
         // Enable camera shake
         isShakingCamera = true;
+        
+        // Animate the control knob
+        if (window.tankControlKnob) {
+            // Push the knob inward when pumping
+            if (typeof gsap !== 'undefined') {
+                // Use GSAP if available
+                gsap.to(window.tankControlKnob.position, {
+                    z: window.tankControlKnobOriginalPosition - 0.9, // Move inward
+                    duration: 0.15,
+                    ease: "power2.out"
+                });
+            } else {
+                // Fallback animation if GSAP isn't available
+                window.tankControlKnob.position.z = window.tankControlKnobOriginalPosition - 0.9;
+            }
+            
+            // Add a slight vibration effect to the knob
+            window.knobVibrationInterval = setInterval(() => {
+                if (window.tankControlKnob) {
+                    // Small random position adjustments for vibration effect
+                    window.tankControlKnob.position.y += (Math.random() - 0.5) * 0.02;
+                    window.tankControlKnob.position.x += (Math.random() - 0.5) * 0.02;
+                }
+            }, 50);
+        }
     }
     
     // Function to reset button appearance
@@ -1858,6 +2450,36 @@ function setupEventListeners() {
             camera.position.x -= cameraShakeOffset.x;
             camera.position.y -= cameraShakeOffset.y;
             cameraShakeOffset = null;
+        }
+        
+        // Reset the control knob position
+        if (window.tankControlKnob) {
+            // Clear vibration interval
+            if (window.knobVibrationInterval) {
+                clearInterval(window.knobVibrationInterval);
+                window.knobVibrationInterval = null;
+            }
+            
+            // Store original position values
+            const originalX = window.tankControlKnob.position.x;
+            const originalY = window.tankControlKnob.position.y;
+            
+            // Animate back to original position with a bounce
+            if (typeof gsap !== 'undefined') {
+                // Use GSAP if available
+                gsap.to(window.tankControlKnob.position, {
+                    z: window.tankControlKnobOriginalPosition || window.tankControlKnob.position.z,
+                    x: originalX, // Use original values instead of hardcoded values
+                    y: originalY, // Use original values instead of hardcoded values
+                    duration: 0.4,
+                    ease: "elastic.out(1, 0.3)"
+                });
+            } else {
+                // Fallback animation if GSAP isn't available
+                window.tankControlKnob.position.z = window.tankControlKnobOriginalPosition || window.tankControlKnob.position.z;
+                window.tankControlKnob.position.x = originalX;
+                window.tankControlKnob.position.y = originalY;
+            }
         }
     }
     
@@ -2093,6 +2715,75 @@ function setupEventListeners() {
             activateBubbles();
         }
     });
+    
+    // Add peg layout selection to localStorage when changed
+    document.getElementById('peg-layout').addEventListener('change', function() {
+        const layout = this.value;
+        localStorage.setItem('pegLayout', layout);
+    });
+    
+    // Add peg controls toggle
+    document.getElementById('toggle-peg-controls').addEventListener('click', function() {
+        const pegControls = document.getElementById('peg-controls');
+        if (pegControls.style.display === 'none') {
+            pegControls.style.display = 'block';
+        } else {
+            pegControls.style.display = 'none';
+        }
+    });
+    
+    // Add close button for peg controls
+    document.getElementById('close-peg-controls').addEventListener('click', function() {
+        document.getElementById('peg-controls').style.display = 'none';
+    });
+    
+    // Add button for adding new pegs
+    document.getElementById('add-peg-button').addEventListener('click', function() {
+        addNewPeg(Ammo);
+    });
+    
+    // Add button for resetting pegs
+    document.getElementById('reset-pegs-button').addEventListener('click', function() {
+        resetPegs(Ammo);
+    });
+    
+    // Add mouse/touch event listeners for dragging pegs
+    const gameViewport = document.getElementById('game-viewport');
+    
+    // Track mouse/touch position
+    let lastClientX = 0;
+    let lastClientY = 0;
+    
+    // Mouse move event for dragging pegs
+    gameViewport.addEventListener('mousemove', function(e) {
+        // Peg dragging functionality has been removed
+        
+        // Update last position
+        lastClientX = e.clientX;
+        lastClientY = e.clientY;
+    });
+    
+    // Touch move for mobile
+    gameViewport.addEventListener('touchmove', function(e) {
+        // Peg dragging functionality has been removed
+        
+        // Update last position
+        if (e.touches.length > 0) {
+            const touch = e.touches[0];
+            lastClientX = touch.clientX;
+            lastClientY = touch.clientY;
+        }
+    });
+    
+    // Mouse up event for stopping drag
+    window.addEventListener('mouseup', function() {
+        // Peg dragging functionality has been removed
+    });
+    
+    // Touch end for mobile
+    window.addEventListener('touchend', function() {
+        // Peg dragging functionality has been removed
+    });
 }
 
 function applyForceToToruses(forceVector) {
@@ -2130,30 +2821,28 @@ function dropRingsOnSlope() {
     // Get the tank dimensions
     const tankHeight = 40;
     const tankWidth = 18;
+    const tankDepth = 2.8;
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
     
-    // Calculate tank bottom position where the slope aligns
-    const tankBottomY = tankY - (tankHeight - 6)/2 - 1.5;
-    
-    // Slope dimensions and position
-    const slopeWidth = 30;
+    // Calculate tank top interior position
+    const tankTopInteriorY = tankY + (tankHeight - 6)/2 - 3; // Just below the top cap
     
     // Activate each torus physics body
     for (let i = 0; i < toruses.length; i++) {
         const torus = toruses[i];
         const physicsBody = torus.userData.physicsBody;
         
-        // Position rings at the far left of the slope (west end)
-        const x = -(tankWidth/2 + slopeWidth - 5); // Far left side of the slope
-        const y = tankBottomY + 5; // Above the slope
-        const z = (Math.random() - 0.5) * 3; // Small random variation in Z
+        // Position rings inside the top of the tank with slight randomization
+        const x = (Math.random() - 0.5) * (tankWidth * 0.8); // Random X within tank width (80% of width to avoid walls)
+        const y = tankTopInteriorY - 20; // High enough inside the tank
+        const z = (Math.random() - 0) * (tankDepth * 0); // Random Z within tank depth (80% of depth to avoid walls)
         
         // Reset position
         const transform = new Ammo.btTransform();
         transform.setIdentity();
         transform.setOrigin(new Ammo.btVector3(x, y, z));
         
-        // Set rotation - keep rings horizontal
+        // Set rotation - randomize rotation for more natural drop
         const quaternion = new Ammo.btQuaternion();
         quaternion.setRotation(new Ammo.btVector3(1, 0, 0), Math.PI / 2); // Horizontal orientation
         transform.setRotation(quaternion);
@@ -2168,6 +2857,13 @@ function dropRingsOnSlope() {
         // Activate the body
         physicsBody.activate();
     }
+    
+    // Apply a small downward force for a more natural drop
+    setTimeout(() => {
+        applyForceToToruses(new Ammo.btVector3(0, -5, 0));
+    }, 100);
+    
+    console.log("Dropped rings inside the tank");
 }
 
 function updatePhysics(deltaTime) {

@@ -100,9 +100,19 @@
             top: 10px;
             left: 10px;
             z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
         }
         
-        #toggle-music {
+        .music-controls-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .control-button {
             background-color: rgba(0, 0, 0, 0.5);
             color: white;
             border: none;
@@ -119,9 +129,68 @@
             line-height: 1;
         }
         
-        #toggle-music:hover {
+        .control-button:hover {
             background-color: rgba(0, 0, 0, 0.7);
             transform: scale(1.1);
+        }
+        
+        #toggle-radio.active {
+            background-color: rgba(76, 175, 80, 0.8);
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+        
+        #toggle-radio.offline {
+            background-color: rgba(150, 150, 150, 0.5);
+            color: #aaa;
+        }
+        
+        #toggle-radio.active.offline {
+            background-color: rgba(150, 175, 150, 0.5);
+            box-shadow: none;
+        }
+        
+        /* Updated radio controls positioning */
+        #radio-controls {
+            position: absolute;
+            top: 60px;
+            left: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 12px;
+            border-radius: 8px;
+            width: 200px;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-10px);
+            z-index: 101;
+        }
+        
+        #music-controls:hover #radio-controls {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+        
+        #track-info {
+            font-size: 12px;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            white-space: nowrap;
+        }
+        
+        #radio-preference {
+            margin-top: 5px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        #radio-preference input {
+            margin: 0;
         }
         
         /* Controls toggle button styles */
@@ -825,6 +894,201 @@
             0% { box-shadow: 0 0 5px rgba(255, 204, 0, 0.3); }
             100% { box-shadow: 0 0 12px rgba(255, 204, 0, 0.7); }
         }
+
+        /* Peg Controls */
+        #peg-controls {
+            position: absolute;
+            bottom: 80px;
+            left: 20px;
+            background-color: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            padding: 15px;
+            color: white;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            width: 250px;
+            max-height: 400px;
+            overflow-y: auto;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .peg-control-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 10px;
+        }
+
+        .peg-control-header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        #close-peg-controls {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 5px;
+        }
+
+        .peg-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .peg-buttons button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #555;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .peg-buttons button:hover {
+            background-color: #777;
+        }
+
+        .peg-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .peg-item {
+            display: flex;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .peg-item.selected {
+            background-color: rgba(100, 149, 237, 0.3);
+            border: 1px solid cornflowerblue;
+        }
+
+        .peg-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+
+        .peg-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 5px;
+        }
+
+        .peg-actions button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 5px;
+        }
+
+        /* Peg move overlay */
+        #peg-move-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 150;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .overlay-instructions {
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 15px 25px;
+            border-radius: 30px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Show/hide peg controls toggle button */
+        #peg-controls-toggle {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+        }
+
+        #toggle-peg-controls {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: rgba(50, 50, 50, 0.8);
+            color: white;
+            font-size: 22px;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+            transition: transform 0.2s;
+        }
+
+        #toggle-peg-controls:hover {
+            transform: scale(1.1);
+        }
+
+        /* Make pegs draggable style */
+        .draggable-peg {
+            cursor: move;
+        }
+        
+        /* Reset button styles */
+        #reset-rings-button {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #4c9ed9, #3a7fb1);
+            color: white;
+            font-size: 24px;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            transition: all 0.2s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #reset-rings-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
+        }
+        
+        #reset-rings-button:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* Hide the peg controls toggle since we replaced it with the reset button */
+        #peg-controls-toggle {
+            display: none;
+        }
+        
+        /* Hide all peg control related UI */
+        #peg-controls, #peg-move-overlay, .peg-list, .peg-buttons {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
@@ -836,6 +1100,11 @@
         <source src="music/dubmood.mp3" type="audio/mp3">
     </audio>
     
+    <!-- Radio stream player (hidden) -->
+    <audio id="radio-player" preload="none">
+        <source src="" type="audio/mpeg">
+    </audio>
+    
     <!-- Sound effects -->
     <audio id="bubble-pop-sound" preload="auto" playsinline>
         <source src="sounds/a_single_bubble_pop.mp3" type="audio/mp3">
@@ -843,13 +1112,42 @@
     
     <!-- Music controls -->
     <div id="music-controls">
-        <button id="toggle-music" title="Toggle Music">🔊</button>
+        <div class="music-controls-row">
+            <!-- Separate mute button -->
+            <button id="toggle-music" title="Toggle Music" class="control-button">🔊</button>
+            <!-- Separate radio button -->
+            <button id="toggle-radio" title="Toggle 90's Radio" class="control-button">📻</button>
+        </div>
+        
         <div id="track-info">Now Playing: <span id="track-name"></span></div>
+        
+        <!-- 90s Radio Station Controls -->
+        <div id="radio-controls">
+            <select id="radio-station" title="Select Radio Station">
+                <option value="none" selected>Select 90's Station</option>
+                <option value="https://24073.live.streamtheworld.com/977_90_SC">80s80s - 90s Hits</option>
+            </select>
+            <div id="radio-info">90's Radio: <span id="radio-status">Off</span></div>
+            <div id="radio-preference">
+                <input type="checkbox" id="prefer-radio" checked>
+                <label for="prefer-radio">Prefer radio when online</label>
+            </div>
+        </div>
     </div>
     
     <!-- Controls toggle button -->
     <div id="controls-toggle">
         <button id="toggle-controls" title="Toggle Controls">⚙️</button>
+    </div>
+    
+    <!-- Peg controls toggle button -->
+    <div id="peg-controls-toggle">
+        <button id="toggle-peg-controls" title="Adjust Pegs">📌</button>
+    </div>
+    
+    <!-- Reset button in bottom left -->
+    <div id="reset-button-container" style="position: absolute; bottom: 20px; left: 20px; z-index: 100;">
+        <button id="reset-rings-button" title="Reset Rings">🔄</button>
     </div>
     
     <!-- Bedroom frame that will surround the game canvas -->
@@ -862,6 +1160,28 @@
             <button id="bump-left-button" title="Bump Left">👈</button>
             <button id="floating-pump-button" title="Pump Bubbles!">💭</button>
             <button id="bump-right-button" title="Bump Right">👉</button>
+        </div>
+        
+        <!-- Floating peg controls -->
+        <div id="peg-controls" style="display: none;">
+            <div class="peg-control-header">
+                <h3>Adjust Pegs</h3>
+                <button id="close-peg-controls" title="Close Peg Controls">✖</button>
+            </div>
+            <div class="peg-buttons">
+                <button id="add-peg-button" title="Add New Peg">➕ Add Peg</button>
+                <button id="reset-pegs-button" title="Reset Pegs">🔄 Reset</button>
+            </div>
+            <div class="peg-list">
+                <!-- Peg items will be dynamically added here -->
+            </div>
+        </div>
+        
+        <!-- Peg move overlay (appears when dragging) -->
+        <div id="peg-move-overlay" style="display: none;">
+            <div class="overlay-instructions">
+                Drag to position peg, then tap to place
+            </div>
         </div>
     </div>
     
@@ -915,6 +1235,16 @@
                     <option value="20">20</option>
                     <option value="30">30</option>
                     <option value="50">50</option>
+                </select>
+            </div>
+            
+            <div class="ring-options">
+                <label for="peg-layout">Peg Layout: </label>
+                <select id="peg-layout">
+                    <option value="default" selected>Default</option>
+                    <option value="challenge">Challenge Mode</option>
+                    <option value="expert">Expert Mode</option>
+                    <option value="random">Random Placement</option>
                 </select>
             </div>
             
@@ -999,6 +1329,9 @@
     <!-- Include Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- Include GSAP for animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.5/gsap.min.js"></script>
     
     <!-- Include Ammo.js -->
     <script src="../../builds/ammo.js"></script>
