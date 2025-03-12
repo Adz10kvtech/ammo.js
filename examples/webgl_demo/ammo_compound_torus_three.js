@@ -87,7 +87,7 @@ const MAX_PUMP_HOLD_TIME = 5000; // Maximum pump hold time in milliseconds (5 se
 let pumpStartTime = 0; // When the pump button was pressed
 const BUBBLE_SPAWN_INTERVAL = 30; // Spawn bubbles more frequently (33 per second)
 const PEG_DETECTION_DISTANCE = 0.5; // Distance to detect if a ring is on a peg
-const PEG_STABILITY_CHECK_INTERVAL = 500; // Check if rings are on pegs every 500ms
+const PEG_STABILITY_CHECK_INTERVAL = 1500; // Check if rings are on pegs every 500ms
 let isBubbleSoundPlaying = false; // Track if bubble sound is currently playing
 
 // Add these global variables near the top with the other globals
@@ -338,14 +338,16 @@ function initGraphics() {
     scoreElement = document.createElement('div');
     scoreElement.id = 'score';
     scoreElement.style.position = 'absolute';
-    scoreElement.style.top = '10px';
-    scoreElement.style.left = '10px';
+    scoreElement.style.top = '50px';
+    scoreElement.style.left = '50%';
+    scoreElement.style.transform = 'translateX(-50%)';
     scoreElement.style.background = 'rgba(0, 0, 0, 0.5)';
     scoreElement.style.color = 'white';
     scoreElement.style.padding = '5px';
     scoreElement.style.borderRadius = '5px';
+    scoreElement.style.zIndex = '999999';
     scoreElement.style.fontFamily = 'Arial, sans-serif';
-    scoreElement.style.fontSize = '16px';
+    scoreElement.style.fontSize = '18px';
     scoreElement.textContent = 'Score: 0';
     document.body.appendChild(scoreElement);
     
@@ -795,8 +797,7 @@ function createPegs(Ammo) {
     // Red plastic for bases (same as tank base)
     const baseMaterial = new THREE.MeshPhongMaterial({ 
         color: 0xdd1111, // Bright red
-        shininess: 70,
-        specular: 0x666666
+        shininess: 70
     });
     
     // Create shared geometries
@@ -810,7 +811,7 @@ function createPegs(Ammo) {
         // Position the pegs - move the green peg (i=1) 2 units to the left
         let x = 0;
         if (i === 0) {
-            x = -5; // Red peg position unchanged
+            x = -4; // Red peg position unchanged
         } else {
             x = 1; // Green peg moved from 5 to 3 (2 units left)
         }
@@ -841,12 +842,15 @@ function createPegs(Ammo) {
         const customPinGeometry = new THREE.CylinderGeometry(0.15, 0.15, pinLength, 8);
         
         const pinMesh = new THREE.Mesh(customPinGeometry, pegMaterial);
-        pinMesh.position.set(0, 2.05, 0);
+        // Adjust the pin vertical position based on which peg it is
+        // For the red peg (i===0), we need to lower the pin to connect with the base
+        const pinYPosition = i === 0 ? 1.3 : 2.05;
+        pinMesh.position.set(0, pinYPosition, 0);
         pegGroup.add(pinMesh);
         
         // Add rounded cap at the top of each pin
         const pinCapMesh = new THREE.Mesh(pinCapGeometry, pegMaterial);
-        pinCapMesh.position.set(0, 2.05 + pinLength/2, 0); // Position at top of pin
+        pinCapMesh.position.set(0, pinYPosition + pinLength/2, 0); // Position at top of pin
         pegGroup.add(pinCapMesh);
         
         // Create base part - flat disc
@@ -1293,7 +1297,7 @@ function spawnBubblesInFlow() {
                 
                 // Very minimal position variance - creates a tight stream
                 // Will still look natural due to physics interactions but follow a consistent path
-                const variance = 0.03; // Very small variance
+                const variance = 0.01; // Very small variance
                 const x = releaseX + (Math.random() * variance * 2 - variance);
                 const y = releaseY + (Math.random() * variance * 2 - variance);
                 const z = releaseZ + (Math.random() * variance * 2 - variance);
@@ -1337,13 +1341,13 @@ function spawnBubblesInFlow() {
                 body.activate();
                 
                 // Apply consistent force modified by power slider and angle
-                const baseForce = 8; // Constant base force
+                const baseForce = 20; // Constant base force
                 const powerFactor = bubblePower / 10; // Power slider effect
                 
                 // Apply force with angle adjustment
                 body.applyCentralForce(new Ammo.btVector3(
                     baseForce * angleX * powerFactor, // X force based on angle
-                    baseForce * angleY * 2.2 * powerFactor, // Y force (upward) adjusted for angle
+                    baseForce * angleY * 5.5 * powerFactor, // Y force (upward) adjusted for angle - increased from 2.2 to 3.5
                     baseForce * normZ * powerFactor // Z stays the same
                 ));
                 
