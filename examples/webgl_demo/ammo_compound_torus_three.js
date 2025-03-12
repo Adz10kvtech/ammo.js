@@ -99,6 +99,13 @@ let highScore = 0;
 let bubbleContainmentBox = null;
 const BUBBLE_BOX_POSITION = { x: 1000, y: 1000, z: 1000 }; // Far away from visible scene
 
+// Near the top of the file with other globals
+// Add camera shake variables
+let isShakingCamera = false;
+let cameraShakeOffset = null;
+let cameraShakeIntensity = 0.01; // Reduced from 0.3 for much more subtle shake
+let cameraShakeTimer = 0; // Add a timer to make shake less constant
+
 // Wait for DOM to load and Ammo to initialize
 document.addEventListener('DOMContentLoaded', function() {
     // Set up character selection
@@ -119,8 +126,18 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Set up start button
-    document.getElementById('start-button').addEventListener('click', startDemo);
+    // Set up mode selection buttons
+    document.getElementById('zen-mode-button').addEventListener('click', function() {
+        // Set game mode to Zen
+        localStorage.setItem('gameMode', 'zen');
+        startDemo();
+    });
+    
+    document.getElementById('arcade-mode-button').addEventListener('click', function() {
+        // Set game mode to Arcade
+        localStorage.setItem('gameMode', 'arcade');
+        startDemo();
+    });
 });
 
 function startDemo() {
@@ -160,6 +177,9 @@ function startDemo() {
         
         // Controls are hidden by default now
         document.getElementById('force-controls').style.display = 'none';
+        
+        // Start the intro animation to show the tank is 3D
+        startTankIntroAnimation();
         
         // Start animation
         animate();
@@ -302,6 +322,8 @@ function initGraphics() {
     controls.minDistance = 15; // Decreased from 20 for closer zoom
     controls.maxDistance = 55; // Decreased from 100 for closer zoom
     controls.maxPolarAngle = Math.PI / 2;
+    // We'll temporarily disable controls during the intro animation
+    controls.enabled = false;
     
     // Create lighting
     // Add hemisphere light (sky + ground)
@@ -399,7 +421,10 @@ function createSharedResources(Ammo) {
 
 function createObjects(Ammo, torusCount) {
     createFloor(Ammo);
+
     createSlope(Ammo);
+    createTopSlope(Ammo); // Add the new top reversed slope
+    
     createTank(Ammo);
     createPegs(Ammo);
     createToruses(Ammo, torusCount);
@@ -585,6 +610,7 @@ function addVolcanoDecorations() {
     scene.add(volcano);
 }
 
+
 function createSlope(Ammo) {
     // Get the tank's base position and dimensions
     const tankHeight = 40;
@@ -596,9 +622,9 @@ function createSlope(Ammo) {
     const tankBottomY = tankY - (tankHeight - 6)/2 + 4;
     
     // Slope dimensions - make it longer on the horizontal plane
-    const slopeWidth = 15.5; // Long enough to reach from outside the tank
+    const slopeWidth = 16.5; // Long enough to reach from outside the tank
     const slopeLength = tankDepth; // Match tank depth
-    const slopeHeight = 0.5; // Thin height
+    const slopeHeight = 0.1; // Thin height
     
     // Gentler angle for better gameplay
     const slopeAngle = Math.PI * 0.15; 
@@ -616,7 +642,7 @@ function createSlope(Ammo) {
     
     // Position the slope to the left (west) of the tank, aligned with the bottom
     slopeMesh.position.set(
-        -tankWidth/18, // Position inside the tank, about 1/4 from the left side
+        -tankWidth/22, // Position inside the tank, about 1/4 from the left side
         tankBottomY, // Align with bottom of the tank
         0 // Centered on Z-axis
     );
@@ -638,6 +664,70 @@ function createSlope(Ammo) {
     // Apply the rotation to the physics body
     const q = new Ammo.btQuaternion();
     q.setRotation(new Ammo.btVector3(0, 0, 1), -slopeAngle); // Rotate around Z axis
+    slopeTransform.setRotation(q);
+    
+    // Create rigid body
+    const mass = 0; // Static object
+    const body = createRigidBody(Ammo, slopeMesh, slopeShape, mass, slopeTransform);
+    
+    // Make the slope very slippery by setting a lower friction value
+    body.setFriction(0.05); // Much lower friction than the default 0.5
+    
+    return slopeMesh;
+}
+
+function createTopSlope(Ammo) {
+    // Get the tank's base position and dimensions
+    const tankHeight = 40;
+    const tankWidth = 18;
+    const tankDepth = 2.8;
+    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
+    
+    // Calculate tank top position - this is where we want to align the slope
+    const tankTopY = tankY + (tankHeight - 6)/2 - 1;
+    
+    // Slope dimensions - make it longer on the horizontal plane
+    const slopeWidth = 2; // Long enough to reach from outside the tank
+    const slopeLength = tankDepth; // Match tank depth
+    const slopeHeight = 0.1; // Thin height
+    
+    // Gentler angle for better gameplay
+    const slopeAngle = Math.PI * -0.20; 
+    
+    // Create visual slope
+    const slopeGeometry = new THREE.BoxGeometry(slopeWidth, slopeHeight, slopeLength);
+    const slopeMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0xc0e8ff,  // Very light blue tint
+        opacity: 0.2,     // Semi-transparent
+        shininess: 90,    // Highly glossy
+        specular: 0xffffff // Strong specular highlight
+    });
+    const slopeMesh = new THREE.Mesh(slopeGeometry, slopeMaterial);
+    
+    // Position the slope to the right (east) of the tank, aligned with the top
+    slopeMesh.position.set(
+        tankWidth/2.2, // Position inside the tank, about 1/4 from the right side
+        tankTopY, // Align with top of the tank
+        0 // Centered on Z-axis
+    );
+    
+    // Rotate around Y axis (for east to west orientation)
+    // Then apply Z rotation for the angle of the slope
+    slopeMesh.rotation.z = slopeAngle; // Positive angle to slope downward from left to right
+    
+    scene.add(slopeMesh);
+    
+    // Create physics body for the slope
+    // We'll use a box shape rotated to match the visual slope
+    const slopeShape = new Ammo.btBoxShape(new Ammo.btVector3(slopeWidth / 2, slopeHeight/2, slopeLength / 2));
+    
+    const slopeTransform = new Ammo.btTransform();
+    slopeTransform.setIdentity();
+    slopeTransform.setOrigin(new Ammo.btVector3(slopeMesh.position.x, slopeMesh.position.y, slopeMesh.position.z));
+    
+    // Apply the rotation to the physics body
+    const q = new Ammo.btQuaternion();
+    q.setRotation(new Ammo.btVector3(0, 0, 1), slopeAngle); // Rotate around Z axis with positive angle
     slopeTransform.setRotation(q);
     
     // Create rigid body
@@ -1012,7 +1102,7 @@ function createBubble(Ammo) {
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
     
     // Define bubble parameters
-    const bubbleCount = 64; // Increased for more consistent stream
+    const bubbleCount = 24; // Increased for more consistent stream
     // Use consistent small sizes for water-like bubbles
     const bubbleSizes = [
         0.25, 0.25, 0.25, 0.25,   // Very small bubbles
@@ -1292,7 +1382,7 @@ function spawnBubblesInFlow() {
         // Check if spawn position is inside any solid objects
         const spawnClearance = 0.5; // Minimum clearance needed
         let spawnPositionClear = true;
-        
+
         // Try to find an inactive bubble
         let spawnedBubble = false;
         for (let i = 0; i < activeBubbles.length; i++) {
@@ -1303,7 +1393,7 @@ function spawnBubblesInFlow() {
                 
                 // Very minimal position variance - creates a tight stream
                 // Will still look natural due to physics interactions but follow a consistent path
-                const variance = 0.01; // Very small variance
+                const variance = 0.6; // Very small variance
                 const x = releaseX + (Math.random() * variance * 2 - variance + 2);
                 const y = releaseY + (Math.random() * variance * 2 - variance - 0.5);
                 const z = releaseZ + (Math.random() * variance * 2 - variance);
@@ -1716,6 +1806,71 @@ function setupEventListeners() {
     // Add floating pump button functionality
     const floatingPumpButton = document.getElementById('floating-pump-button');
     
+    // Create a pump status indicator
+    const pumpStatusIndicator = document.createElement('div');
+    pumpStatusIndicator.id = 'pump-status';
+    pumpStatusIndicator.textContent = 'PUMPING!';
+    pumpStatusIndicator.style.position = 'absolute';
+    pumpStatusIndicator.style.bottom = '80px';
+    pumpStatusIndicator.style.right = '20px';
+    pumpStatusIndicator.style.backgroundColor = 'rgba(255, 0, 0, 0.7)';
+    pumpStatusIndicator.style.color = 'white';
+    pumpStatusIndicator.style.padding = '8px 15px';
+    pumpStatusIndicator.style.borderRadius = '20px';
+    pumpStatusIndicator.style.fontWeight = 'bold';
+    pumpStatusIndicator.style.fontSize = '18px';
+    pumpStatusIndicator.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.5)';
+    pumpStatusIndicator.style.display = 'none';
+    pumpStatusIndicator.style.zIndex = '100';
+    document.body.appendChild(pumpStatusIndicator);
+    
+    // Function to show active pumping feedback
+    function showPumpingFeedback() {
+        // Enhance button appearance
+        floatingPumpButton.style.transform = 'scale(0.9)';
+        floatingPumpButton.style.backgroundColor = '#ff5555';
+        floatingPumpButton.style.boxShadow = '0 0 15px rgba(255, 0, 0, 0.7)';
+        floatingPumpButton.style.animation = 'none'; // Stop normal pulsing
+        floatingPumpButton.style.animation = 'pump-pulse 0.5s infinite alternate'; // Add faster pulsing
+        
+        // Show status indicator
+        pumpStatusIndicator.style.display = 'block';
+        
+        // Enable camera shake
+        isShakingCamera = true;
+    }
+    
+    // Function to reset button appearance
+    function resetPumpingFeedback() {
+        floatingPumpButton.style.transform = '';
+        floatingPumpButton.style.backgroundColor = '';
+        floatingPumpButton.style.boxShadow = '';
+        floatingPumpButton.style.animation = 'pulse 1.5s infinite'; // Restore original pulse
+        
+        // Hide status indicator
+        pumpStatusIndicator.style.display = 'none';
+        
+        // Disable camera shake
+        isShakingCamera = false;
+        
+        // Reset camera position
+        if (cameraShakeOffset) {
+            camera.position.x -= cameraShakeOffset.x;
+            camera.position.y -= cameraShakeOffset.y;
+            cameraShakeOffset = null;
+        }
+    }
+    
+    // Add a style for the pumping animation
+    const pumpStyle = document.createElement('style');
+    pumpStyle.textContent = `
+        @keyframes pump-pulse {
+            0% { transform: scale(0.9); box-shadow: 0 0 15px rgba(255, 0, 0, 0.7); }
+            100% { transform: scale(1.1); box-shadow: 0 0 25px rgba(255, 0, 0, 0.9); }
+        }
+    `;
+    document.head.appendChild(pumpStyle);
+    
     // Mouse down starts pumping
     floatingPumpButton.addEventListener('mousedown', function() {
         isPumpButtonHeld = true;
@@ -1723,20 +1878,24 @@ function setupEventListeners() {
         bubbleFlowActive = true;
         spawnBubblesInFlow();
         
-        // Add visual feedback
-        this.style.transform = 'scale(0.95)';
+        // Show feedback
+        showPumpingFeedback();
     });
     
     // Mouse up stops pumping
     floatingPumpButton.addEventListener('mouseup', function() {
         isPumpButtonHeld = false;
-        this.style.transform = '';
+        
+        // Reset feedback
+        resetPumpingFeedback();
     });
     
     // Mouse leaving the button also stops pumping
     floatingPumpButton.addEventListener('mouseleave', function() {
         isPumpButtonHeld = false;
-        this.style.transform = '';
+        
+        // Reset feedback
+        resetPumpingFeedback();
     });
     
     // Touch events for mobile support
@@ -1747,13 +1906,15 @@ function setupEventListeners() {
         bubbleFlowActive = true;
         spawnBubblesInFlow();
         
-        // Add visual feedback
-        this.style.transform = 'scale(0.95)';
+        // Show feedback
+        showPumpingFeedback();
     });
     
     floatingPumpButton.addEventListener('touchend', function() {
         isPumpButtonHeld = false;
-        this.style.transform = '';
+        
+        // Reset feedback
+        resetPumpingFeedback();
     });
     
     // Variables for button cooldown
@@ -2260,11 +2421,195 @@ function showCelebration() {
     }, 3500);
 }
 
+// Function to start the tank intro animation when the game first loads
+function startTankIntroAnimation() {
+    // Calculate the tank position (use the same calculation as in createTank)
+    const tankHeight = 40;
+    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
+    const tankPosition = new THREE.Vector3(0, tankY, 0);
+    
+    // Store original camera position and target for restoration later
+    const originalCameraPosition = camera.position.clone();
+    const originalControlsTarget = controls.target.clone();
+    
+    // Set up animation parameters
+    let animationDuration = 5000; // 5 seconds for the full rotation
+    let startTime = performance.now();
+    let animationComplete = false;
+    
+    // Update controls target to focus on tank
+    controls.target.copy(tankPosition);
+    
+    // Position camera for a good view of the tank
+    const distanceFromTank = 50;
+    camera.position.set(
+        tankPosition.x + distanceFromTank, 
+        tankPosition.y + 10, 
+        tankPosition.z
+    );
+    
+    // Create the animation function
+    function updateTankIntroAnimation() {
+        if (animationComplete) return;
+        
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / animationDuration, 1);
+        
+        // Rotate camera around the tank
+        const angle = progress * Math.PI * 2; // Complete 360° rotation
+        camera.position.x = tankPosition.x + Math.sin(angle) * distanceFromTank;
+        camera.position.z = tankPosition.z + Math.cos(angle) * distanceFromTank;
+        camera.lookAt(tankPosition);
+        
+        if (progress < 1) {
+            // Continue animation
+            requestAnimationFrame(updateTankIntroAnimation);
+        } else {
+            // Animation complete
+            animationComplete = true;
+            
+            // Just enable controls without transitioning back to original position
+            // This keeps the camera at the current position after rotation
+            controls.enabled = true;
+            
+            // Show the drag instruction message
+            showDragInstructionMessage();
+        }
+    }
+    
+    // Start the animation
+    updateTankIntroAnimation();
+}
+
+// Function to show a message informing users they can drag to spin the game
+function showDragInstructionMessage() {
+    // Create the message element
+    const message = document.createElement('div');
+    message.id = 'drag-instruction';
+    message.style.position = 'absolute';
+    message.style.top = '50%'; // Center vertically
+    message.style.left = '50%';
+    message.style.transform = 'translate(-50%, -50%)';
+    message.style.fontSize = '24px';
+    message.style.fontWeight = 'bold';
+    message.style.color = '#ffffff';
+    message.style.textShadow = '0 0 10px rgba(0, 0, 0, 0.7)';
+    message.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    message.style.padding = '12px 20px';
+    message.style.borderRadius = '10px';
+    message.style.opacity = '0';
+    message.style.transition = 'opacity 0.8s';
+    message.style.zIndex = '1000';
+    message.style.pointerEvents = 'none'; // Make sure it doesn't interfere with clicks
+    message.textContent = 'DRAG TO SPIN THE GAME';
+    document.body.appendChild(message);
+    
+    // Fade in
+    setTimeout(() => {
+        message.style.opacity = '1';
+    }, 300);
+    
+    // Fade out after 4 seconds
+    setTimeout(() => {
+        message.style.opacity = '0';
+    }, 4300);
+    
+    // Remove from DOM after fade out and show bubble instruction
+    setTimeout(() => {
+        if (message.parentNode) {
+            document.body.removeChild(message);
+        }
+        // Show the bubble instruction after the first message is gone
+        showBubbleInstructionMessage();
+    }, 5100);
+}
+
+// Function to show a message about the bubble controls
+function showBubbleInstructionMessage() {
+    // Create the message element
+    const message = document.createElement('div');
+    message.id = 'bubble-instruction';
+    message.style.position = 'absolute';
+    message.style.top = '50%'; // Center vertically
+    message.style.left = '50%';
+    message.style.transform = 'translate(-50%, -50%)';
+    message.style.fontSize = '24px';
+    message.style.fontWeight = 'bold';
+    message.style.color = '#ffffff';
+    message.style.textShadow = '0 0 10px rgba(0, 0, 0, 0.7)';
+    message.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    message.style.padding = '12px 20px';
+    message.style.borderRadius = '10px';
+    message.style.opacity = '0';
+    message.style.transition = 'opacity 0.8s';
+    message.style.zIndex = '1000';
+    message.style.pointerEvents = 'none'; // Make sure it doesn't interfere with clicks
+    message.textContent = 'TAP BUBBLE BUTTON OR HOLD FOR MORE BUBBLES';
+    document.body.appendChild(message);
+    
+    // Fade in
+    setTimeout(() => {
+        message.style.opacity = '1';
+    }, 300);
+    
+    // Fade out after 4 seconds
+    setTimeout(() => {
+        message.style.opacity = '0';
+    }, 4300);
+    
+    // Remove from DOM after fade out
+    setTimeout(() => {
+        if (message.parentNode) {
+            document.body.removeChild(message);
+        }
+    }, 5100);
+}
+
+// Apply camera shake effect
+function applyCameraShake() {
+    // Remove previous shake offset if it exists
+    if (cameraShakeOffset) {
+        camera.position.x -= cameraShakeOffset.x;
+        camera.position.y -= cameraShakeOffset.y;
+    }
+    
+    // Only update the shake every few frames for more subtle effect
+    cameraShakeTimer++;
+    if (cameraShakeTimer < 2) {
+        // Skip this frame for smoother, less jittery shake
+        if (cameraShakeOffset) {
+            // Re-apply the existing offset
+            camera.position.x += cameraShakeOffset.x;
+            camera.position.y += cameraShakeOffset.y;
+        }
+        return;
+    }
+    
+    // Reset timer
+    cameraShakeTimer = 0;
+    
+    // Generate new random shake offset with reduced intensity
+    cameraShakeOffset = {
+        x: (Math.random() * 2 - 1) * cameraShakeIntensity,
+        y: (Math.random() * 2 - 1) * cameraShakeIntensity * 0.3 // Further reduced vertical shake
+    };
+    
+    // Apply new shake offset
+    camera.position.x += cameraShakeOffset.x;
+    camera.position.y += cameraShakeOffset.y;
+}
+
 function animate() {
     requestAnimationFrame(animate);
     
     const deltaTime = clock.getDelta();
     updatePhysics(deltaTime);
+    
+    // Apply camera shake if active
+    if (isShakingCamera) {
+        applyCameraShake();
+    }
+    
     renderer.render(scene, camera);
     controls.update();
 } 
