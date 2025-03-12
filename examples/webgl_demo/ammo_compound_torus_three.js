@@ -593,7 +593,7 @@ function createSlope(Ammo) {
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
     
     // Calculate tank bottom position - this is where we want to align the slope
-    const tankBottomY = tankY - (tankHeight - 6)/2 + 2;
+    const tankBottomY = tankY - (tankHeight - 6)/2 + 4;
     
     // Slope dimensions - make it longer on the horizontal plane
     const slopeWidth = 15.5; // Long enough to reach from outside the tank
@@ -601,7 +601,7 @@ function createSlope(Ammo) {
     const slopeHeight = 0.5; // Thin height
     
     // Gentler angle for better gameplay
-    const slopeAngle = Math.PI * 0.10; 
+    const slopeAngle = Math.PI * 0.15; 
     
     // Create visual slope
     const slopeGeometry = new THREE.BoxGeometry(slopeWidth, slopeHeight, slopeLength);
@@ -616,7 +616,7 @@ function createSlope(Ammo) {
     
     // Position the slope to the left (west) of the tank, aligned with the bottom
     slopeMesh.position.set(
-        -tankWidth/7, // Position inside the tank, about 1/4 from the left side
+        -tankWidth/18, // Position inside the tank, about 1/4 from the left side
         tankBottomY, // Align with bottom of the tank
         0 // Centered on Z-axis
     );
@@ -811,7 +811,7 @@ function createPegs(Ammo) {
         // Position the pegs - move the green peg (i=1) 2 units to the left
         let x = 0;
         if (i === 0) {
-            x = -4; // Red peg position unchanged
+            x = -4.5; // Red peg position unchanged
         } else {
             x = 1; // Green peg moved from 5 to 3 (2 units left)
         }
@@ -852,6 +852,12 @@ function createPegs(Ammo) {
         const pinCapMesh = new THREE.Mesh(pinCapGeometry, pegMaterial);
         pinCapMesh.position.set(0, pinYPosition + pinLength/2, 0); // Position at top of pin
         pegGroup.add(pinCapMesh);
+        
+        // Set very low friction for the pin cap to make rings slide easily
+        const body = pinCapMesh.userData.physicsBody;
+        if (body) {
+            body.setFriction(0.05); // Very low friction value
+        }
         
         // Create base part - flat disc
         const baseGeometry = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16); // Smaller, flatter base
@@ -952,8 +958,8 @@ function createToruses(Ammo, count) {
         
         // Set mass, linear damping, and angular damping
         const mass = 1.0;
-        const linearDamping = 0.5;  // Add some drag to slow down motion
-        const angularDamping = 0.5; // Add some rotational damping
+        const linearDamping = 0.3;  // Add some drag to slow down motion
+        const angularDamping = 0.2; // Add some rotational damping
         
         // Create the rigid body
         let body = createRigidBody(Ammo, torus, torusCompoundShape, mass, transform, linearDamping, angularDamping);
@@ -1298,8 +1304,8 @@ function spawnBubblesInFlow() {
                 // Very minimal position variance - creates a tight stream
                 // Will still look natural due to physics interactions but follow a consistent path
                 const variance = 0.01; // Very small variance
-                const x = releaseX + (Math.random() * variance * 2 - variance);
-                const y = releaseY + (Math.random() * variance * 2 - variance);
+                const x = releaseX + (Math.random() * variance * 2 - variance + 2);
+                const y = releaseY + (Math.random() * variance * 2 - variance - 0.5);
                 const z = releaseZ + (Math.random() * variance * 2 - variance);
                 
                 // Position bubble
@@ -1342,7 +1348,7 @@ function spawnBubblesInFlow() {
                 
                 // Apply consistent force modified by power slider and angle
                 const baseForce = 20; // Constant base force
-                const powerFactor = bubblePower / 10; // Power slider effect
+                const powerFactor = bubblePower / 10 + 1 // Power slider effect
                 
                 // Apply force with angle adjustment
                 body.applyCentralForce(new Ammo.btVector3(
@@ -1748,6 +1754,172 @@ function setupEventListeners() {
     floatingPumpButton.addEventListener('touchend', function() {
         isPumpButtonHeld = false;
         this.style.transform = '';
+    });
+    
+    // Variables for button cooldown
+    let bumpButtonsOnCooldown = false;
+    let cooldownTimeRemaining = 0;
+    let cooldownInterval = null;
+    
+    // Function to start cooldown
+    function startBumpButtonCooldown() {
+        if (bumpButtonsOnCooldown) return; // Already on cooldown
+        
+        bumpButtonsOnCooldown = true;
+        cooldownTimeRemaining = 10; // 10 second cooldown
+        
+        // Disable both buttons
+        bumpLeftButton.disabled = true;
+        bumpRightButton.disabled = true;
+        
+        // Add visual cooldown class
+        bumpLeftButton.classList.add('on-cooldown');
+        bumpRightButton.classList.add('on-cooldown');
+        
+        // Set initial text to show cooldown
+        bumpLeftButton.innerHTML = cooldownTimeRemaining;
+        bumpRightButton.innerHTML = cooldownTimeRemaining;
+        
+        // Clear any existing interval
+        if (cooldownInterval) clearInterval(cooldownInterval);
+        
+        // Start cooldown timer
+        cooldownInterval = setInterval(function() {
+            cooldownTimeRemaining--;
+            
+            // Update countdown text
+            bumpLeftButton.innerHTML = cooldownTimeRemaining;
+            bumpRightButton.innerHTML = cooldownTimeRemaining;
+            
+            if (cooldownTimeRemaining <= 0) {
+                // Reset when cooldown is done
+                clearInterval(cooldownInterval);
+                cooldownInterval = null;
+                bumpButtonsOnCooldown = false;
+                
+                // Re-enable buttons
+                bumpLeftButton.disabled = false;
+                bumpRightButton.disabled = false;
+                
+                // Remove cooldown styling
+                bumpLeftButton.classList.remove('on-cooldown');
+                bumpRightButton.classList.remove('on-cooldown');
+                
+                // Restore original icons
+                bumpLeftButton.innerHTML = "👈";
+                bumpRightButton.innerHTML = "👉";
+            }
+        }, 1000);
+    }
+    
+    // Bump Left Button
+    const bumpLeftButton = document.getElementById('bump-left-button');
+    bumpLeftButton.addEventListener('mousedown', function() {
+        // Only apply force if not on cooldown
+        if (!bumpButtonsOnCooldown) {
+            // Apply force to the left with a moderate strength value
+            const strength = 5; // Adjust this value as needed for a good gameplay feel
+            const forceVector = new Ammo.btVector3(-strength, 0, 0);
+            applyForceToToruses(forceVector);
+            
+            // Add visual feedback
+            this.style.transform = 'scale(0.95)';
+            
+            // Start cooldown
+            startBumpButtonCooldown();
+        }
+    });
+    
+    bumpLeftButton.addEventListener('mouseup', function() {
+        if (!bumpButtonsOnCooldown) {
+            this.style.transform = '';
+        }
+    });
+    
+    bumpLeftButton.addEventListener('mouseleave', function() {
+        if (!bumpButtonsOnCooldown) {
+            this.style.transform = '';
+        }
+    });
+    
+    // Touch events for mobile support
+    bumpLeftButton.addEventListener('touchstart', function(e) {
+        e.preventDefault(); // Prevent default touch behavior
+        
+        // Only apply force if not on cooldown
+        if (!bumpButtonsOnCooldown) {
+            // Apply force to the left with a moderate strength value
+            const strength = 5; // Adjust this value as needed for a good gameplay feel
+            const forceVector = new Ammo.btVector3(-strength, 0, 0);
+            applyForceToToruses(forceVector);
+            
+            // Add visual feedback
+            this.style.transform = 'scale(0.95)';
+            
+            // Start cooldown
+            startBumpButtonCooldown();
+        }
+    });
+    
+    bumpLeftButton.addEventListener('touchend', function() {
+        if (!bumpButtonsOnCooldown) {
+            this.style.transform = '';
+        }
+    });
+    
+    // Bump Right Button
+    const bumpRightButton = document.getElementById('bump-right-button');
+    bumpRightButton.addEventListener('mousedown', function() {
+        // Only apply force if not on cooldown
+        if (!bumpButtonsOnCooldown) {
+            // Apply force to the right with a moderate strength value
+            const strength = 5; // Adjust this value as needed for a good gameplay feel
+            const forceVector = new Ammo.btVector3(strength, 0, 0);
+            applyForceToToruses(forceVector);
+            
+            // Add visual feedback
+            this.style.transform = 'scale(0.95)';
+            
+            // Start cooldown
+            startBumpButtonCooldown();
+        }
+    });
+    
+    bumpRightButton.addEventListener('mouseup', function() {
+        if (!bumpButtonsOnCooldown) {
+            this.style.transform = '';
+        }
+    });
+    
+    bumpRightButton.addEventListener('mouseleave', function() {
+        if (!bumpButtonsOnCooldown) {
+            this.style.transform = '';
+        }
+    });
+    
+    // Touch events for mobile support
+    bumpRightButton.addEventListener('touchstart', function(e) {
+        e.preventDefault(); // Prevent default touch behavior
+        
+        // Only apply force if not on cooldown
+        if (!bumpButtonsOnCooldown) {
+            // Apply force to the right with a moderate strength value
+            const strength = 5; // Adjust this value as needed for a good gameplay feel
+            const forceVector = new Ammo.btVector3(strength, 0, 0);
+            applyForceToToruses(forceVector);
+            
+            // Add visual feedback
+            this.style.transform = 'scale(0.95)';
+            
+            // Start cooldown
+            startBumpButtonCooldown();
+        }
+    });
+    
+    bumpRightButton.addEventListener('touchend', function() {
+        if (!bumpButtonsOnCooldown) {
+            this.style.transform = '';
+        }
     });
     
     // Add keyboard shortcuts

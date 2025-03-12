@@ -523,6 +523,17 @@
                 font-size: 25px;
             }
             
+            #bump-left-button, #bump-right-button {
+                width: 40px;
+                height: 40px;
+                font-size: 18px;
+                margin: 0 3px;
+            }
+            
+            #bump-left-button.on-cooldown, #bump-right-button.on-cooldown {
+                font-size: 16px;
+            }
+            
             #game-viewport {
                 width: 90%;
                 max-height: 80vh;
@@ -565,6 +576,9 @@
             right: 20px;
             z-index: 100;
             pointer-events: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         #floating-pump-button {
@@ -632,6 +646,47 @@
             display: block;
             opacity: 1;
         }
+
+        #bump-left-button, #bump-right-button {
+            background: linear-gradient(145deg, #3a7fb1, #4c9ed9);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 45px;
+            height: 45px;
+            font-size: 22px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            transition: all 0.2s ease;
+            margin: 0 5px;
+        }
+        
+        #bump-left-button:hover, #bump-right-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
+        }
+        
+        #bump-left-button:active, #bump-right-button:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* Cooldown styles */
+        #bump-left-button.on-cooldown, #bump-right-button.on-cooldown {
+            background: linear-gradient(145deg, #888, #666);
+            transform: scale(1);
+            cursor: not-allowed;
+            font-size: 18px;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+            color: #ffcc00;
+            animation: cooldown-pulse 1s infinite alternate;
+        }
+        
+        @keyframes cooldown-pulse {
+            0% { box-shadow: 0 0 5px rgba(255, 204, 0, 0.3); }
+            100% { box-shadow: 0 0 12px rgba(255, 204, 0, 0.7); }
+        }
     </style>
 </head>
 <body>
@@ -666,7 +721,9 @@
         
         <!-- Floating pump button -->
         <div id="floating-pump">
+            <button id="bump-left-button" title="Bump Left">👈</button>
             <button id="floating-pump-button" title="Pump Bubbles!">💭</button>
+            <button id="bump-right-button" title="Bump Right">👉</button>
         </div>
     </div>
     
