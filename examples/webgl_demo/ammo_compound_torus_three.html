@@ -722,6 +722,7 @@
             #floating-pump {
                 bottom: 15px;
                 right: 15px;
+                gap: 3px;
             }
             
             #floating-pump-button {
@@ -734,7 +735,7 @@
                 width: 40px;
                 height: 40px;
                 font-size: 18px;
-                margin: 0 3px;
+                margin: 0;
             }
             
             #bump-left-button.on-cooldown, #bump-right-button.on-cooldown {
@@ -786,6 +787,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            flex-wrap: nowrap;
+            gap: 5px;
         }
         
         #floating-pump-button {
@@ -800,6 +803,9 @@
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
             transition: all 0.2s ease;
             animation: pulse 1.5s infinite;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         #floating-pump-button:hover {
@@ -865,7 +871,10 @@
             cursor: pointer;
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
             transition: all 0.2s ease;
-            margin: 0 5px;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         #bump-left-button:hover, #bump-right-button:hover {
