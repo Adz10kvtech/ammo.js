@@ -8,6 +8,14 @@ let fpsElement;
 let backgroundMusic;
 let isMusicPlaying = false;
 
+// Sound variables
+let soundEnabled = true; // Default sound to enabled
+let bubblePopSound;
+let bubbleMissSound;
+let coinGetSound;
+let bubblesPoppingSound;
+let victoryFanfareSound;
+
 // Radio variables
 let radioPlayer;
 let isRadioPlaying = false;
@@ -127,6 +135,50 @@ let pegColors = [
     0xffff33, // Yellow
     0xff33ff, // Magenta
 ];
+
+// Add these global variables near other score-related variables around line 102-105
+const POSITIVE_QUOTES_90S = [
+    "Booyah!",
+    "That's totally rad!",
+    "As if! You're killing it!",
+    "Way cool!",
+    "You da bomb!",
+    "Talk to the hand, haters!",
+    "That's the 411!",
+    "All that and a bag of chips!",
+    "Totally awesome!",
+    "You're all that!",
+    "Psych! That was amazing!",
+    "That's fresh!",
+    "Cowabunga, dude!",
+    "Word up!",
+    "Boo-yah!"
+];
+
+const NEGATIVE_QUOTES_90S = [
+    "Aw, snap!",
+    "Talk to the hand!",
+    "Whatever!",
+    "That's buggin'!",
+    "Harsh!",
+    "Don't have a cow, man!",
+    "That's weak sauce!",
+    "As if!",
+    "Dude, that's whack!",
+    "That's janky!",
+    "Psych! Just kidding!",
+    "Not!",
+    "Dude, that's so not fly!",
+    "Major bummer!",
+    "Chill out, it happens!"
+];
+
+let quoteElement = null;
+let lastDisplayedQuote = "";
+let quoteTimeout = null;
+
+// Add this variable near other score-related variables (before updateScore function)
+let highScoreElement = null;
 
 // Add a global function to reset rings that can be called from anywhere
 window.resetRings = function() {
@@ -257,6 +309,9 @@ function startDemo() {
     // Set up the bedroom frame
     setupBedroomFrame();
     
+    // Initialize the victory message flag
+    window.victoryMessageShown = false;
+    
     // Initialize Ammo.js
     Ammo().then(function(Ammo) {
         // Set up transformations
@@ -269,6 +324,7 @@ function startDemo() {
         
         // Get the number of rings selected
         const torusCount = parseInt(document.getElementById('torus-count').value);
+        totalRings = torusCount; // Store the selected number of rings globally
         
         // Create the objects
         createObjects(Ammo, torusCount);
@@ -294,6 +350,10 @@ function startDemo() {
         // Start animation
         animate();
     });
+    
+    // Add this line to startDemo function or wherever appropriate
+    // startDemo function or initGraphics - add after your other initializations
+    initScoreElements();
 }
 
 // Initialize background music and radio
@@ -618,20 +678,41 @@ function handleRadioPlaying() {
 // Initialize sound effects
 function initSoundEffects() {
     // Preload sound effects
-    const bubblePopSound = document.getElementById('bubble-pop-sound');
-    const bubbleCreateSound = document.getElementById('bubble-create-sound');
+    bubblePopSound = document.getElementById('bubble-pop-sound');
+    bubbleMissSound = document.getElementById('bubble-miss-sound');
+    coinGetSound = document.getElementById('coin-get-sound');
+    bubblesPoppingSound = document.getElementById('bubbles-popping-sound');
+    victoryFanfareSound = document.getElementById('victory-fanfare-sound');
     
-    // Set initial volume for both sounds
+    // Set initial volume for all sounds
     if (bubblePopSound) {
         bubblePopSound.volume = 0.7;
         // Attempt to preload by loading metadata
         bubblePopSound.load();
     }
     
-    if (bubbleCreateSound) {
-        bubbleCreateSound.volume = 0.3; // Lower volume for creation sound
+    if (bubbleMissSound) {
+        bubbleMissSound.volume = 0.5;
         // Attempt to preload by loading metadata
-        bubbleCreateSound.load();
+        bubbleMissSound.load();
+    }
+    
+    if (coinGetSound) {
+        coinGetSound.volume = 0.6;
+        // Attempt to preload by loading metadata
+        coinGetSound.load();
+    }
+    
+    if (bubblesPoppingSound) {
+        bubblesPoppingSound.volume = 0.4; // Lower volume for continuous sound
+        // Attempt to preload by loading metadata
+        bubblesPoppingSound.load();
+    }
+    
+    if (victoryFanfareSound) {
+        victoryFanfareSound.volume = 0.8; // Slightly louder for celebration
+        // Attempt to preload by loading metadata
+        victoryFanfareSound.load();
     }
     
     console.log("Sound effects initialized");
@@ -1540,7 +1621,7 @@ function createBubble(Ammo) {
     const tankY = FLOOR_HEIGHT + tankHeight/2 + 1; // Same as in createTank
     
     // Define bubble parameters
-    const bubbleCount = 24; // Increased for more consistent stream
+    const bubbleCount = 33; // Increased for more consistent stream
     // Use consistent small sizes for water-like bubbles
     const bubbleSizes = [
         0.25, 0.25, 0.25, 0.25,   // Very small bubbles
@@ -1786,16 +1867,9 @@ function spawnBubblesInFlow() {
     
     const currentTime = Date.now();
     
-    // Check if we've exceeded the maximum hold time
-    if (isPumpButtonHeld && currentTime - pumpStartTime > MAX_PUMP_HOLD_TIME) {
-        // Stop the flow if max hold time is reached
-        bubbleFlowActive = false;
-        return;
-    }
-    
-    // If button is no longer held
-    if (!isPumpButtonHeld && currentTime - pumpStartTime > 100) {
-        // Stop the flow when button is released
+    // Check for max pump time or button release
+    if ((isPumpButtonHeld && currentTime - pumpStartTime > MAX_PUMP_HOLD_TIME) || 
+        (!isPumpButtonHeld && currentTime - pumpStartTime > 100)) {
         bubbleFlowActive = false;
         return;
     }
@@ -1804,120 +1878,115 @@ function spawnBubblesInFlow() {
     if (currentTime - lastBubbleTime > BUBBLE_SPAWN_INTERVAL) {
         lastBubbleTime = currentTime;
         
-        // Get the tank dimensions
+        // Get tank dimensions (moved outside the bubble loop)
         const tankWidth = 18;
         const tankDepth = 2.8;
         const tankHeight = 40;
         const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
         
-        // Use the position from the sliders with minimal variance
+        // Setup spawn position (calculations done once)
         const releaseX = bubbleSpawnPosition.x;
         const releaseY = tankY + bubbleSpawnPosition.y;
-        // Get the Z value directly from the slider to ensure it's current
-        const zSliderValue = parseFloat(document.getElementById('bubble-z').value);
-        const releaseZ = zSliderValue; // Use the direct slider value instead of bubbleSpawnPosition.z
+        const releaseZ = parseFloat(document.getElementById('bubble-z').value);
         
-        // Check if spawn position is inside any solid objects
-        const spawnClearance = 0.5; // Minimum clearance needed
-        let spawnPositionClear = true;
+        // Precalculate target values and angle factors
+        const targetX = 0; // Center of tank
+        const targetY = tankY + tankHeight/3;
+        const targetZ = 0; // Center of tank
         
-        // Try to find an inactive bubble
-        let spawnedBubble = false;
-        for (let i = 0; i < activeBubbles.length; i++) {
-            const bubble = activeBubbles[i];
-            
-            if (!bubble.userData.isActive) {
-                const size = bubble.userData.size;
-                
-                // Very minimal position variance - creates a tight stream
-                // Will still look natural due to physics interactions but follow a consistent path
-                const variance = 0.6; // Very small variance
-                const x = releaseX + (Math.random() * variance * 2 - variance + 2);
-                const y = releaseY + (Math.random() * variance * 2 - variance - 0.5);
-                const z = releaseZ + (Math.random() * variance * 2 - variance);
-                
-                // Position bubble
-                bubble.position.set(x, y, z);
-                
-                // Update physics body position
-                const body = bubble.userData.physicsBody;
-                const worldTransform = body.getWorldTransform();
-                worldTransform.setOrigin(new Ammo.btVector3(x, y, z));
-                
-                // Calculate a water-like trajectory - a gentle arc toward the center-top
-                // Use a fixed destination point for consistency
-                const targetX = 0; // Center of tank
-                const targetY = tankY + tankHeight/3; // About 1/3 up the tank
-                const targetZ = 0; // Center of tank
-                
-                // Direction vector toward target (the water arc)
-                const dirX = targetX - releaseX;
-                const dirY = targetY - releaseY;
-                const dirZ = targetZ - releaseZ;
-                
-                // Normalize for consistent force
-                const length = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
-                const normX = dirX / length;
-                const normY = dirY / length;
-                const normZ = dirZ / length;
-                
-                // Calculate x-component based on angle (convert from degrees to radians)
-                const angleRadians = (bubbleAngle * Math.PI) / 180;
-                
-                // Angle affects the X and Y components
-                // At 90 degrees, all force is upward (Y)
-                // At angles < 90, force has a negative X component (left)
-                // At angles > 90, force has a positive X component (right)
-                const angleX = Math.cos((90 - bubbleAngle) * Math.PI / 180);
-                const angleY = Math.sin(angleRadians);
-                
-                // Activate bubble physics
-                body.activate();
-                
-                // Apply consistent force modified by power slider and angle
-                const baseForce = 20; // Constant base force
-                const powerFactor = bubblePower / 10 + 1 // Power slider effect
-                
-                // Apply force with angle adjustment
-                body.applyCentralForce(new Ammo.btVector3(
-                    baseForce * angleX * powerFactor, // X force based on angle
-                    baseForce * angleY * 5.5 * powerFactor, // Y force (upward) adjusted for angle - increased from 2.2 to 3.5
-                    baseForce * normZ * powerFactor // Z stays the same
-                ));
-                
-                // Mark as active
-                bubble.userData.isActive = true;
-                
-                // Set bubble lifetime
-                bubbleLifetimes[i] = currentTime + BUBBLE_LIFETIME;
-                
-                // Set bubble immunity period - bubble cannot pop for this many milliseconds
-                bubbleImmunityTimes[i] = currentTime + BUBBLE_IMMUNITY_PERIOD;
-                
-                // Make bubble visible immediately with a slight fade-in
-                bubble.material.opacity = 0;
-                const startTime = Date.now();
-                const fadeIn = function() {
-                    const elapsed = Date.now() - startTime;
-                    if (elapsed < 100) { // Faster fade-in (100ms)
-                        bubble.material.opacity = Math.min(0.6, elapsed / 100 * 0.6);
-                        requestAnimationFrame(fadeIn);
-                    } else {
-                        bubble.material.opacity = 0.6;
-                    }
-                };
-                fadeIn();
-                
-                spawnedBubble = true;
-                break;
-            }
-        }
+        // Calculate angle components once
+        const angleRadians = (bubbleAngle * Math.PI) / 180;
+        const angleX = Math.cos((90 - bubbleAngle) * Math.PI / 180);
+        const angleY = Math.sin(angleRadians);
+        
+        // Calculate direction vector once
+        const dirX = targetX - releaseX;
+        const dirY = targetY - releaseY;
+        const dirZ = targetZ - releaseZ;
+        
+        // Normalize once
+        const length = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+        const normX = dirX / length;
+        const normY = dirY / length;
+        const normZ = dirZ / length;
+        
+        // Force calculations
+        const baseForce = 20;
+        const powerFactor = bubblePower / 10 + 1;
+        
+        trySpawnBubble(currentTime, releaseX, releaseY, releaseZ, angleX, angleY, 
+                      normZ, baseForce, powerFactor);
     }
     
     // Continue the flow if active
     if (bubbleFlowActive) {
         requestAnimationFrame(spawnBubblesInFlow);
     }
+}
+
+// New helper function to attempt to spawn a bubble
+function trySpawnBubble(currentTime, releaseX, releaseY, releaseZ, angleX, angleY, 
+                       normZ, baseForce, powerFactor) {
+    // Try to find an inactive bubble
+    for (let i = 0; i < activeBubbles.length; i++) {
+        const bubble = activeBubbles[i];
+        
+        if (!bubble.userData.isActive) {
+            const size = bubble.userData.size;
+            const variance = 0.3; // Very small variance
+            
+            // Position with minimal variance
+            const x = releaseX + (Math.random() * variance * 2 - variance + 2);
+            const y = releaseY;
+            const z = releaseZ; // No variance on z-axis as requested
+            
+            // Update bubble position
+            bubble.position.set(x, y, z);
+            
+            // Update physics body position
+            const body = bubble.userData.physicsBody;
+            const worldTransform = body.getWorldTransform();
+            worldTransform.setOrigin(new Ammo.btVector3(x, y, z));
+            
+            // Activate bubble physics
+            body.activate();
+            
+            // Apply force with angle adjustment
+            body.applyCentralForce(new Ammo.btVector3(
+                baseForce * angleX * powerFactor,
+                baseForce * angleY * 5.5 * powerFactor,
+                baseForce * normZ * powerFactor
+            ));
+            
+            // Mark as active and set timers
+            bubble.userData.isActive = true;
+            bubbleLifetimes[i] = currentTime + BUBBLE_LIFETIME;
+            bubbleImmunityTimes[i] = currentTime + BUBBLE_IMMUNITY_PERIOD;
+            
+            // Make bubble visible with a fade-in
+            fadeBubbleIn(bubble);
+            return true;
+        }
+    }
+    return false;
+}
+
+// New helper function for the fade-in animation
+function fadeBubbleIn(bubble) {
+    bubble.material.opacity = 0;
+    const startTime = Date.now();
+    
+    const fadeIn = function() {
+        const elapsed = Date.now() - startTime;
+        if (elapsed < 100) { // Faster fade-in (100ms)
+            bubble.material.opacity = Math.min(0.6, elapsed / 100 * 0.6);
+            requestAnimationFrame(fadeIn);
+        } else {
+            bubble.material.opacity = 0.6;
+        }
+    };
+    
+    fadeIn();
 }
 
 // Also update the bubble-ring collision function for consistency
@@ -1986,18 +2055,53 @@ function checkBubbleRingCollisions() {
                     // Apply a more consistent upward force to the ring
                     ringBody.activate();
                     
-                    // Less horizontal randomness, more consistent upward force
-                    ringBody.applyCentralForce(new Ammo.btVector3(
-                        (Math.random() * 0.6 - 0.3) * 80 * sizeMultiplier * powerFactor * bubbleResistance,  // Reduced horizontal randomness
-                        (90 + Math.random() * 30) * sizeMultiplier * powerFactor * bubbleResistance,         // More consistent upward force
-                        (Math.random() * 0.6 - 0.3) * 80 * sizeMultiplier * powerFactor * bubbleResistance   // Reduced horizontal randomness
-                    ));
-                    
-                    // Reduced spin for more realistic water physics
+                    // Get bubble and ring positions and velocities
+                    const bubblePos = new THREE.Vector3();
+                    bubbleMesh.getWorldPosition(bubblePos);
+                    const ringPos = new THREE.Vector3();
+                    ringMesh.getWorldPosition(ringPos);
+
+                    // Get velocities
+                    const bubbleVel = new THREE.Vector3(
+                        bubbleBody.getLinearVelocity().x(),
+                        bubbleBody.getLinearVelocity().y(),
+                        bubbleBody.getLinearVelocity().z()
+                    );
+                    const ringVel = new THREE.Vector3(
+                        ringBody.getLinearVelocity().x(),
+                        ringBody.getLinearVelocity().y(),
+                        ringBody.getLinearVelocity().z()
+                    );
+
+                    // Calculate impact direction and relative velocity
+                    const impactDir = new THREE.Vector3().subVectors(bubblePos, ringPos).normalize();
+                    const relativeVel = new THREE.Vector3().subVectors(bubbleVel, ringVel);
+                    const impactSpeed = relativeVel.length();
+
+                    // Calculate impact point (approximate as being on the ring's outer edge in direction of bubble)
+                    const ringRadius = 1.0; // Adjust based on your actual ring size
+                    const impactPoint = new THREE.Vector3().copy(impactDir).multiplyScalar(ringRadius);
+
+                    // Calculate torque using cross product of impact point and impact force
+                    const impactForce = new THREE.Vector3().copy(impactDir).multiplyScalar(impactSpeed * powerFactor * sizeMultiplier * bubbleResistance);
+                    const torque = new THREE.Vector3().crossVectors(impactPoint, impactForce);
+
+                    // Scale torque for appropriate gameplay feel
+                    const torqueScaleFactor = 1.5; // Adjust this to control the amount of spin
+                    torque.multiplyScalar(torqueScaleFactor);
+
+                    // Apply the calculated torque instead of random values
                     ringBody.applyTorqueImpulse(new Ammo.btVector3(
-                        (Math.random() - 0.5) * 3 * powerFactor * bubbleResistance,
-                        (Math.random() - 0.5) * 3 * powerFactor * bubbleResistance,
-                        (Math.random() - 0.5) * 3 * powerFactor * bubbleResistance
+                        torque.x, 
+                        torque.y, 
+                        torque.z
+                    ));
+
+                    // Still apply central force as before for the upward movement
+                    ringBody.applyCentralForce(new Ammo.btVector3(
+                        (Math.random() * 0.6 - 0.3) * 80 * sizeMultiplier * powerFactor * bubbleResistance,
+                        (90 + Math.random() * 30) * sizeMultiplier * powerFactor * bubbleResistance,
+                        (Math.random() * 0.6 - 0.3) * 80 * sizeMultiplier * powerFactor * bubbleResistance
                     ));
                     
                     // Create pop effect before hiding the bubble
@@ -2048,6 +2152,18 @@ function activateBubbles() {
     
     // Start spawning bubbles
     spawnBubblesInFlow();
+    
+    // Play the bubbles popping sound when activated by keyboard
+    if (soundEnabled && bubblesPoppingSound) {
+        bubblesPoppingSound.play().catch(err => {
+            console.log("Could not play bubbles popping sound:", err);
+        });
+    }
+    
+    // Show pumping feedback for visual cues
+    if (typeof showPumpingFeedback === 'function') {
+        showPumpingFeedback();
+    }
 }
 
 function createRigidBody(Ammo, threeObject, physicsShape, mass, transform, linearDamping = 0, angularDamping = 0) {
@@ -2406,6 +2522,13 @@ function setupEventListeners() {
         // Enable camera shake
         isShakingCamera = true;
         
+        // Play bubbles popping sound
+        if (soundEnabled && bubblesPoppingSound) {
+            bubblesPoppingSound.play().catch(err => {
+                console.log("Could not play bubbles popping sound:", err);
+            });
+        }
+        
         // Animate the control knob
         if (window.tankControlKnob) {
             // Push the knob inward when pumping
@@ -2445,40 +2568,30 @@ function setupEventListeners() {
         // Disable camera shake
         isShakingCamera = false;
         
-        // Reset camera position
-        if (cameraShakeOffset) {
-            camera.position.x -= cameraShakeOffset.x;
-            camera.position.y -= cameraShakeOffset.y;
-            cameraShakeOffset = null;
+        // Stop bubbles popping sound
+        if (bubblesPoppingSound) {
+            bubblesPoppingSound.pause();
+            bubblesPoppingSound.currentTime = 0;
         }
         
-        // Reset the control knob position
-        if (window.tankControlKnob) {
-            // Clear vibration interval
-            if (window.knobVibrationInterval) {
-                clearInterval(window.knobVibrationInterval);
-                window.knobVibrationInterval = null;
-            }
-            
-            // Store original position values
-            const originalX = window.tankControlKnob.position.x;
-            const originalY = window.tankControlKnob.position.y;
-            
-            // Animate back to original position with a bounce
+        // Reset the control knob
+        if (window.tankControlKnob && typeof window.tankControlKnobOriginalPosition !== 'undefined') {
+            // Return knob to original position
             if (typeof gsap !== 'undefined') {
                 // Use GSAP if available
                 gsap.to(window.tankControlKnob.position, {
-                    z: window.tankControlKnobOriginalPosition || window.tankControlKnob.position.z,
-                    x: originalX, // Use original values instead of hardcoded values
-                    y: originalY, // Use original values instead of hardcoded values
-                    duration: 0.4,
-                    ease: "elastic.out(1, 0.3)"
+                    z: window.tankControlKnobOriginalPosition,
+                    duration: 0.3,
+                    ease: "back.out(1.5)"
                 });
             } else {
                 // Fallback animation if GSAP isn't available
-                window.tankControlKnob.position.z = window.tankControlKnobOriginalPosition || window.tankControlKnob.position.z;
-                window.tankControlKnob.position.x = originalX;
-                window.tankControlKnob.position.y = originalY;
+                window.tankControlKnob.position.z = window.tankControlKnobOriginalPosition;
+            }
+            
+            // Clear the vibration interval
+            if (window.knobVibrationInterval) {
+                clearInterval(window.knobVibrationInterval);
             }
         }
     }
@@ -2711,8 +2824,24 @@ function setupEventListeners() {
             dropRingsOnSlope();
         } else if (event.key === 'b' || event.key === 'B') {
             // For keyboard, use the traditional approach (timer-based burst)
+            isPumpButtonHeld = true;
             pumpStartTime = Date.now();
             activateBubbles();
+        }
+    });
+    
+    // Add keyboard release handler
+    window.addEventListener('keyup', function(event) {
+        if (event.key === 'b' || event.key === 'B') {
+            isPumpButtonHeld = false;
+            
+            // Stop bubbles flow
+            bubbleFlowActive = false;
+            
+            // Reset pump feedback
+            if (typeof resetPumpingFeedback === 'function') {
+                resetPumpingFeedback();
+            }
         }
     });
     
@@ -2818,52 +2947,94 @@ function applyRandomForcesToToruses(maxStrength) {
 
 // Function to drop rings on the slope
 function dropRingsOnSlope() {
-    // Get the tank dimensions
-    const tankHeight = 40;
-    const tankWidth = 18;
-    const tankDepth = 2.8;
-    const tankY = FLOOR_HEIGHT + tankHeight/2 + 1;
+    // Initialize tracking arrays for animations
+    ringDropAnimations = [];
     
-    // Calculate tank top interior position
-    const tankTopInteriorY = tankY + (tankHeight - 6)/2 - 3; // Just below the top cap
-    
-    // Activate each torus physics body
-    for (let i = 0; i < toruses.length; i++) {
-        const torus = toruses[i];
-        const physicsBody = torus.userData.physicsBody;
-        
-        // Position rings inside the top of the tank with slight randomization
-        const x = (Math.random() - 0.5) * (tankWidth * 0.8); // Random X within tank width (80% of width to avoid walls)
-        const y = tankTopInteriorY - 20; // High enough inside the tank
-        const z = (Math.random() - 0) * (tankDepth * 0); // Random Z within tank depth (80% of depth to avoid walls)
-        
-        // Reset position
-        const transform = new Ammo.btTransform();
-        transform.setIdentity();
-        transform.setOrigin(new Ammo.btVector3(x, y, z));
-        
-        // Set rotation - randomize rotation for more natural drop
-        const quaternion = new Ammo.btQuaternion();
-        quaternion.setRotation(new Ammo.btVector3(1, 0, 0), Math.PI / 2); // Horizontal orientation
-        transform.setRotation(quaternion);
-        
-        // Apply transform
-        physicsBody.setWorldTransform(transform);
-        
-        // Reset velocity and angular velocity
-        physicsBody.setLinearVelocity(new Ammo.btVector3(0, 0, 0));
-        physicsBody.setAngularVelocity(new Ammo.btVector3(0, 0, 0));
-        
-        // Activate the body
-        physicsBody.activate();
+    // Reset the score and update display
+    score = 0;
+    if (typeof updateScoreDisplay === 'function') {
+        updateScoreDisplay();
     }
     
-    // Apply a small downward force for a more natural drop
-    setTimeout(() => {
-        applyForceToToruses(new Ammo.btVector3(0, -5, 0));
-    }, 100);
+    // Reset victory message shown flag
+    window.victoryMessageShown = false;
+
+    // Loop through all rigid bodies and reset the positions
+    for (let i = 0; i < rigidBodies.length; i++) {
+        const object = rigidBodies[i];
+        
+        // Only consider torus objects
+        if (object.geometry && object.geometry.type === 'TorusGeometry') {
+            const body = object.userData.physicsBody;
+            
+            // Determine new position on slope
+            const posX = (Math.random() * 14) - 7; // Random X position
+            const posY = FLOOR_HEIGHT + (Math.random() * 4) + 10; // Random height above slope
+            const posZ = (Math.random() * 3) - 1.5; // Random Z position
+            
+            if (body) {
+                const transform = new Ammo.btTransform();
+                transform.setIdentity();
+                transform.setOrigin(new Ammo.btVector3(posX, posY, posZ));
+                
+                // Reset rotation
+                const quat = new THREE.Quaternion();
+                quat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2); // Flat orientation
+                transform.setRotation(new Ammo.btQuaternion(quat.x, quat.y, quat.z, quat.w));
+                
+                // Set the transform
+                body.setWorldTransform(transform);
+                
+                // Reset velocities
+                body.setLinearVelocity(new Ammo.btVector3(0, 0, 0));
+                body.setAngularVelocity(new Ammo.btVector3(0, 0, 0));
+                
+                // Activate the body
+                body.activate();
+                
+                // Reset any on-peg status
+                if (object.userData.isOnPeg) {
+                    object.userData.isOnPeg = false;
+                    
+                    // Reset physics properties
+                    body.setFriction(0.5); // Normal friction
+                    body.setRestitution(0.2); // Normal bounce
+                    body.setDamping(0.3, 0.3); // Normal damping
+                    
+                    // Reset visual feedback
+                    if (object.material && object.userData.originalColor) {
+                        object.material.emissive = new THREE.Color(0x000000);
+                        object.material.needsUpdate = true;
+                    }
+                }
+            }
+        }
+    }
     
-    console.log("Dropped rings inside the tank");
+    // Also reset all toruses in the toruses array to ensure complete reset
+    for (let i = 0; i < toruses.length; i++) {
+        const torus = toruses[i];
+        torus.userData.isOnPeg = false;
+        
+        // Reset visual feedback
+        if (torus.material && torus.userData.originalColor) {
+            torus.material.emissive = new THREE.Color(0x000000);
+            torus.material.needsUpdate = true;
+        }
+    }
+    
+    // Apply camera shake for visual feedback
+    applyCameraShake(0.5, 500);
+    
+    // Hide any visible quotes
+    if (quoteTimeout) {
+        clearTimeout(quoteTimeout);
+    }
+    if (quoteElement) {
+        quoteElement.style.opacity = '0';
+    }
+    
+    console.log("Game reset complete!");
 }
 
 function updatePhysics(deltaTime) {
@@ -2927,16 +3098,55 @@ function updatePhysics(deltaTime) {
 // Add a new function to check if rings are on pegs and stabilize them
 function checkRingsOnPegs() {
     // Skip if no pegs or rings
-    if (!pegs || pegs.length === 0 || !rigidBodies || rigidBodies.length === 0) return;
+    if (!pegs || pegs.length === 0 || !toruses || toruses.length === 0) return;
     
     console.log("Checking for rings on pegs...");
     
-    // Check each ring (skip the first rigidBody which is typically the ground)
-    for (let i = 1; i < rigidBodies.length; i++) {
-        const ring = rigidBodies[i];
+    // Add debug information about rigid bodies and toruses array
+    console.log(`Total rigid bodies: ${rigidBodies.length}, Total toruses array length: ${toruses.length}`);
+    
+    // Define a floor threshold - rings below this are automatically NOT on pegs
+    const floorThreshold = FLOOR_HEIGHT + 3; // Adjust based on your floor height
+    
+    // First, reset status for rings below the floor threshold
+    for (let i = 0; i < toruses.length; i++) {
+        const ring = toruses[i];
+        if (ring.position.y < floorThreshold) {
+            // If this ring was previously marked as on peg, log that it fell off
+            if (ring.userData.isOnPeg) {
+                console.log(`Ring #${i+1} is below floor threshold (${ring.position.y.toFixed(2)} < ${floorThreshold}). Marking as NOT on peg.`);
+                ring.userData.isOnPeg = false;
+                
+                // Reset physics properties if needed
+                const body = ring.userData.physicsBody;
+                if (body) {
+                    body.setFriction(0.5);
+                    body.setRestitution(0.2);
+                    body.setDamping(0.3, 0.3);
+                    ring.userData.bubbleResistance = 1.0;
+                }
+                
+                // Reset visual feedback
+                if (ring.material && ring.userData.originalColor) {
+                    ring.material.emissive = new THREE.Color(0x000000);
+                    ring.material.needsUpdate = true;
+                }
+            }
+        }
+    }
+    
+    // Log details about each torus from the toruses array for debugging
+    console.log("Toruses in the toruses array:");
+    toruses.forEach((torus, index) => {
+        console.log(`Torus ${index} position: ${torus.position.x.toFixed(2)}, ${torus.position.y.toFixed(2)}, ${torus.position.z.toFixed(2)}, isOnPeg: ${torus.userData.isOnPeg || false}`);
+    });
+    
+    // Check each ring in the toruses array - this ensures we check ALL rings
+    for (let i = 0; i < toruses.length; i++) {
+        const ring = toruses[i];
         
-        // Skip non-torus objects and objects that are already marked as on a peg
-        if (!ring.geometry || !ring.geometry.type || ring.geometry.type !== 'TorusGeometry') continue;
+        // Skip rings already identified as below floor threshold
+        if (ring.position.y < floorThreshold) continue;
         
         // For each peg, check if the ring is positioned on it
         for (let j = 0; j < pegs.length; j++) {
@@ -2952,41 +3162,36 @@ function checkRingsOnPegs() {
             
             // If ring is centered over a peg with small tolerance
             if (horizontalDistance < PEG_DETECTION_DISTANCE) {
-                console.log(`Ring #${i} is horizontally aligned with Peg #${j} (distance: ${horizontalDistance.toFixed(2)})`);
+                console.log(`Ring #${i+1} is horizontally aligned with Peg #${j} (distance: ${horizontalDistance.toFixed(2)})`);
                 
                 // Check vertical position relative to peg top
                 // This varies depending on which peg and ring height, so we use approximate values
                 const pegHeight = (j === 0) ? 2.0 : 3.5; // Approximate heights from createPegs function
                 const pegTop = pegPos.y + pegHeight / 2;
                 
-                // Get the torus tube radius and major radius for better height detection
-                const tubeRadius = ring.geometry.parameters.tube || 0.3; // Default if not found
-                const majorRadius = ring.geometry.parameters.radius || 1.0; // Default if not found
-                
                 // Log the ring's position relative to the peg
                 console.log(`Ring position Y: ${ringPos.y.toFixed(2)}, Peg top Y: ${pegTop.toFixed(2)}`);
                 
-                // MUCH more forgiving height check:
-                // 1. Allow rings to be positioned quite a bit below the peg (down to pegTop - 2 units)
-                // 2. Keep the upper limit for stacking
-                const lowerLimit = pegTop - 2.0; // Extremely forgiving - allow rings to be well below the peg
-                const upperLimit = pegTop + 10; // Keep the existing upper limit for stacked rings
+                // More strict height check to prevent false positives
+                // Ring should be at or slightly below the peg top, but not too far below
+                const lowerLimit = pegTop - 1.5; // Less forgiving - closer to peg top
+                const upperLimit = pegTop + 5;  // Reasonable limit for stacked rings
                 
-                // Check if ring is within the extremely forgiving height range
+                // Check if ring is within the height range
                 if (ringPos.y >= lowerLimit && ringPos.y <= upperLimit) {
-                    console.log(`Ring #${i} is at the correct height for Peg #${j}!`);
+                    console.log(`Ring #${i+1} is at the correct height for Peg #${j}!`);
                     
                     // Ring is on peg! Stabilize it
                     
                     // If already stabilized, skip
                     if (ring.userData.isOnPeg) {
-                        console.log(`Ring #${i} is already stabilized on Peg #${j}`);
+                        console.log(`Ring #${i+1} is already stabilized on Peg #${j}`);
                         continue;
                     }
                     
                     // Mark as on peg
                     ring.userData.isOnPeg = true;
-                    console.log(`SUCCESS: Ring #${i} is now stabilized on Peg #${j}!`);
+                    console.log(`SUCCESS: Ring #${i+1} is now stabilized on Peg #${j}!`);
                     
                     // Get physics body
                     const body = ring.userData.physicsBody;
@@ -3021,11 +3226,11 @@ function checkRingsOnPegs() {
                         }
                     }
                 } else {
-                    console.log(`Ring #${i} is aligned with Peg #${j} but NOT at the correct height. Valid range: ${lowerLimit.toFixed(2)} to ${upperLimit.toFixed(2)}`);
+                    console.log(`Ring #${i+1} is aligned with Peg #${j} but NOT at the correct height. Valid range: ${lowerLimit.toFixed(2)} to ${upperLimit.toFixed(2)}`);
                     
                     // If ring was previously on peg but now isn't, reset properties
                     if (ring.userData.isOnPeg) {
-                        console.log(`Ring #${i} was knocked off Peg #${j}! Resetting properties.`);
+                        console.log(`Ring #${i+1} was knocked off Peg #${j}! Resetting properties.`);
                         // Remove on-peg status
                         ring.userData.isOnPeg = false;
                         
@@ -3052,17 +3257,78 @@ function checkRingsOnPegs() {
         }
     }
     
-    // Count rings on pegs
-    const ringsOnPegs = rigidBodies.filter(obj => obj.userData && obj.userData.isOnPeg).length;
+    // Count rings on pegs using the toruses array
+    const ringsOnPegs = toruses.filter(obj => obj.userData && obj.userData.isOnPeg).length;
     console.log(`Total rings currently on pegs: ${ringsOnPegs}`);
     
     // Update the score display
     updateScore();
 }
 
+// Add this function to display a quote
+function displayQuote(quote, isPositive) {
+    // Clear any existing timeout
+    if (quoteTimeout) {
+        clearTimeout(quoteTimeout);
+    }
+    
+    // Create the quote element if it doesn't exist
+    if (!quoteElement) {
+        quoteElement = document.createElement('div');
+        quoteElement.style.position = 'absolute';
+        quoteElement.style.top = '120px';
+        quoteElement.style.left = '50%';
+        quoteElement.style.transform = 'translateX(-50%)';
+        quoteElement.style.fontFamily = "'Comic Sans MS', cursive";
+        quoteElement.style.fontSize = '24px';
+        quoteElement.style.textShadow = '2px 2px 4px rgba(0,0,0,0.5)';
+        quoteElement.style.padding = '10px';
+        quoteElement.style.borderRadius = '10px';
+        quoteElement.style.zIndex = '1000';
+        quoteElement.style.transition = 'all 0.3s ease-in-out';
+        quoteElement.style.opacity = '0';
+        quoteElement.style.transform = 'translateX(-50%) scale(0.8)';
+        document.body.appendChild(quoteElement);
+    }
+    
+    // Don't show the same quote twice in a row if possible
+    if (quote === lastDisplayedQuote && (isPositive ? POSITIVE_QUOTES_90S.length > 1 : NEGATIVE_QUOTES_90S.length > 1)) {
+        // Try to get a different quote
+        const quotes = isPositive ? POSITIVE_QUOTES_90S : NEGATIVE_QUOTES_90S;
+        let newQuote;
+        do {
+            newQuote = quotes[Math.floor(Math.random() * quotes.length)];
+        } while (newQuote === lastDisplayedQuote && quotes.length > 1);
+        quote = newQuote;
+    }
+    
+    lastDisplayedQuote = quote;
+    
+    // Set styles based on positive/negative
+    quoteElement.style.backgroundColor = isPositive ? 'rgba(0, 255, 0, 0.7)' : 'rgba(255, 0, 0, 0.7)';
+    quoteElement.style.color = 'white';
+    quoteElement.textContent = quote;
+    
+    // Animate in
+    setTimeout(() => {
+        quoteElement.style.opacity = '1';
+        quoteElement.style.transform = 'translateX(-50%) scale(1)';
+    }, 10);
+    
+    // Fade out after 2 seconds
+    quoteTimeout = setTimeout(() => {
+        quoteElement.style.opacity = '0';
+        quoteElement.style.transform = 'translateX(-50%) scale(0.8)';
+    }, 2000);
+}
+
+// Modify updateScore function to include quotes
 function updateScore() {
-    // Count rings on pegs
-    const ringsOnPegs = rigidBodies.filter(obj => obj.userData && obj.userData.isOnPeg).length;
+    // Store previous score to check for changes
+    const previousScore = score;
+    
+    // Count rings on pegs using the toruses array
+    const ringsOnPegs = toruses.filter(obj => obj.userData && obj.userData.isOnPeg).length;
     
     // Update the score
     score = ringsOnPegs;
@@ -3070,19 +3336,81 @@ function updateScore() {
     // Update high score if needed
     if (score > highScore) {
         highScore = score;
-        // Add a flash effect to the score display for new high scores
-        scoreElement.style.backgroundColor = 'rgba(0, 128, 0, 0.7)'; // Green background
-        setTimeout(() => {
-            scoreElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)'; // Back to normal
-        }, 500);
+        // Remove localStorage persistence
     }
     
-    // Update the score display
-    scoreElement.textContent = `Score: ${score} | High: ${highScore}`;
+    // This section is where you're calculating the new score value
+    // After calculating the new score, compare with previous:
     
-    // Add celebration for high achievements
-    if (score >= 3 && score === highScore) {
-        showCelebration();
+    if (score > previousScore) {
+        // Score increased by 1
+        if (score - previousScore === 1) {
+            const randomQuote = POSITIVE_QUOTES_90S[Math.floor(Math.random() * POSITIVE_QUOTES_90S.length)];
+            displayQuote(randomQuote, true);
+            // Play the coin sound when score increases
+            if (soundEnabled && coinGetSound) {
+                coinGetSound.play();
+            }
+        }
+    } else if (score < previousScore) {
+        // Score decreased by 1
+        if (previousScore - score === 1) {
+            const randomQuote = NEGATIVE_QUOTES_90S[Math.floor(Math.random() * NEGATIVE_QUOTES_90S.length)];
+            displayQuote(randomQuote, false);
+            // Play a negative sound if you have one
+            if (soundEnabled && bubbleMissSound) {
+                bubbleMissSound.play();
+            }
+        }
+    }
+    
+    // Update the combined score display
+    updateScoreDisplay();
+    
+    // Check for win condition - all pegs have rings
+    if (score > 0 && score === totalRings) {
+        // Only show victory message if we haven't shown it already for this game session
+        if (!window.victoryMessageShown) {
+            window.victoryMessageShown = true;
+            
+            // Short delay before showing victory message to let the last coin sound play
+            setTimeout(() => {
+                showVictoryMessage();
+            }, 500);
+        }
+    }
+}
+
+// Also, make sure to initialize the high score element when the game starts
+// Add this to your startDemo or initGraphics function
+function initScoreElements() {
+    // Create score element if it doesn't exist
+    if (!scoreElement) {
+        scoreElement = document.createElement('div');
+        scoreElement.style.position = 'absolute';
+        scoreElement.style.top = '40px';
+        scoreElement.style.left = '20px';
+        scoreElement.style.color = 'white';
+        scoreElement.style.fontFamily = 'Arial, sans-serif';
+        scoreElement.style.fontSize = '20px';
+        scoreElement.style.textShadow = '2px 2px 4px rgba(0,0,0,0.5)';
+        scoreElement.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        scoreElement.style.padding = '10px 15px';
+        scoreElement.style.borderRadius = '10px';
+        document.body.appendChild(scoreElement);
+    }
+    
+    // Initialize high score to 0 for each session
+    highScore = 0;
+    
+    // Update the score display to show both score and high score
+    updateScoreDisplay();
+}
+
+// New function to update the combined score display
+function updateScoreDisplay() {
+    if (scoreElement) {
+        scoreElement.innerHTML = `Score: <span style="color: white;">${score}</span> | High Score: <span style="color: yellow;">${highScore}</span>`;
     }
 }
 
@@ -3308,4 +3636,109 @@ function animate() {
     
     renderer.render(scene, camera);
     controls.update();
-} 
+}
+
+// Function to show fancy victory message and play fanfare when player wins
+function showVictoryMessage() {
+    // Create a victory container for the message
+    const victoryContainer = document.createElement('div');
+    victoryContainer.id = 'victory-container';
+    victoryContainer.style.position = 'absolute';
+    victoryContainer.style.top = '0';
+    victoryContainer.style.left = '0';
+    victoryContainer.style.width = '100%';
+    victoryContainer.style.height = '100%';
+    victoryContainer.style.display = 'flex';
+    victoryContainer.style.flexDirection = 'column';
+    victoryContainer.style.justifyContent = 'center';
+    victoryContainer.style.alignItems = 'center';
+    victoryContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    victoryContainer.style.zIndex = '1000';
+    victoryContainer.style.opacity = '0';
+    victoryContainer.style.transition = 'opacity 1s ease-in-out';
+    document.body.appendChild(victoryContainer);
+    
+    // Create the main victory message
+    const victoryMessage = document.createElement('div');
+    victoryMessage.textContent = 'YOU WIN!';
+    victoryMessage.style.color = 'gold';
+    victoryMessage.style.fontSize = '5rem';
+    victoryMessage.style.fontWeight = 'bold';
+    victoryMessage.style.textShadow = '0 0 20px rgba(255, 223, 0, 0.8)';
+    victoryMessage.style.marginBottom = '30px';
+    victoryMessage.style.fontFamily = 'Arial, sans-serif';
+    victoryMessage.style.transform = 'scale(0.5)';
+    victoryMessage.style.opacity = '0';
+    victoryMessage.style.transition = 'transform 1s ease-out, opacity 1s ease-out';
+    victoryContainer.appendChild(victoryMessage);
+    
+    // Create the sub-message
+    const subMessage = document.createElement('div');
+    subMessage.textContent = 'Perfect Score! All Rings Placed!';
+    subMessage.style.color = 'white';
+    subMessage.style.fontSize = '2rem';
+    subMessage.style.fontWeight = 'bold';
+    subMessage.style.textShadow = '0 0 10px rgba(255, 255, 255, 0.6)';
+    subMessage.style.opacity = '0';
+    subMessage.style.transform = 'translateY(20px)';
+    subMessage.style.transition = 'opacity 1s ease-out 0.5s, transform 1s ease-out 0.5s';
+    victoryContainer.appendChild(subMessage);
+    
+    // Create a replay button
+    const replayButton = document.createElement('button');
+    replayButton.textContent = 'Play Again';
+    replayButton.style.marginTop = '40px';
+    replayButton.style.padding = '15px 30px';
+    replayButton.style.fontSize = '1.5rem';
+    replayButton.style.fontWeight = 'bold';
+    replayButton.style.backgroundColor = '#4facfe';
+    replayButton.style.color = 'white';
+    replayButton.style.border = 'none';
+    replayButton.style.borderRadius = '10px';
+    replayButton.style.cursor = 'pointer';
+    replayButton.style.boxShadow = '0 0 15px rgba(79, 172, 254, 0.7)';
+    replayButton.style.opacity = '0';
+    replayButton.style.transform = 'translateY(20px)';
+    replayButton.style.transition = 'opacity 1s ease-out 1s, transform 1s ease-out 1s, background-color 0.3s';
+    replayButton.onmouseover = function() {
+        this.style.backgroundColor = '#3a8cd5';
+    };
+    replayButton.onmouseout = function() {
+        this.style.backgroundColor = '#4facfe';
+    };
+    replayButton.onclick = function() {
+        document.body.removeChild(victoryContainer);
+        // Reset game
+        dropRingsOnSlope();
+    };
+    victoryContainer.appendChild(replayButton);
+    
+    // Animate in the container
+    setTimeout(() => {
+        victoryContainer.style.opacity = '1';
+    }, 100);
+    
+    // Animate in the elements with staggered timing
+    setTimeout(() => {
+        victoryMessage.style.transform = 'scale(1)';
+        victoryMessage.style.opacity = '1';
+    }, 600);
+    
+    setTimeout(() => {
+        subMessage.style.opacity = '1';
+        subMessage.style.transform = 'translateY(0)';
+    }, 1000);
+    
+    setTimeout(() => {
+        replayButton.style.opacity = '1';
+        replayButton.style.transform = 'translateY(0)';
+    }, 1500);
+    
+    // Play the victory fanfare
+    if (soundEnabled && victoryFanfareSound) {
+        victoryFanfareSound.currentTime = 0;
+        victoryFanfareSound.play().catch(err => {
+            console.log("Could not play victory fanfare:", err);
+        });
+    }
+}
