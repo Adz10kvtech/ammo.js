@@ -1,3 +1,155 @@
+// Initialize Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyBQ1rojxnHaejbbC9DkeGyNFsiUytcwa24",
+  authDomain: "waterpegs.firebaseapp.com",
+  projectId: "waterpegs",
+  storageBucket: "waterpegs.firebasestorage.app",
+  messagingSenderId: "154042740506",
+  appId: "1:154042740506:web:07696288fbdb1c679ac6a3",
+  measurementId: "G-QGHKGF7B4P"
+};
+
+// Firebase variables (will be initialized later)
+let firestore;
+let firestoreModules = {};
+let leaderboardInitialized = false;
+
+// Initialize Firebase
+async function initializeFirebase() {
+    try {
+        // First, try to use the Firebase modules exposed by the HTML
+        if (window.firebaseModular) {
+            console.log("Using Firebase modules from HTML");
+            firestore = window.firebaseModular.firestore;
+            firestoreModules = {
+                collection: window.firebaseModular.collection,
+                addDoc: window.firebaseModular.addDoc,
+                getDocs: window.firebaseModular.getDocs,
+                query: window.firebaseModular.query,
+                where: window.firebaseModular.where,
+                orderBy: window.firebaseModular.orderBy,
+                limit: window.firebaseModular.limit,
+                serverTimestamp: window.firebaseModular.serverTimestamp
+            };
+            leaderboardInitialized = true;
+            return;
+        }
+        
+        // If the above fails, try dynamic imports
+        console.log("Trying dynamic imports for Firebase");
+        const firebaseApp = await import('https://www.gstatic.com/firebasejs/11.4.0/firebase-app.js');
+        const firestoreModule = await import('https://www.gstatic.com/firebasejs/11.4.0/firebase-firestore.js');
+        
+        // Initialize app
+        const app = firebaseApp.initializeApp(firebaseConfig);
+        
+        // Get Firestore instance
+        firestore = firestoreModule.getFirestore(app);
+        
+        // Store modules for later use
+        firestoreModules = {
+            collection: firestoreModule.collection,
+            addDoc: firestoreModule.addDoc,
+            getDocs: firestoreModule.getDocs,
+            query: firestoreModule.query,
+            where: firestoreModule.where,
+            orderBy: firestoreModule.orderBy,
+            limit: firestoreModule.limit,
+            serverTimestamp: firestoreModule.serverTimestamp
+        };
+        
+        console.log("Firebase initialized successfully (dynamic imports)");
+        leaderboardInitialized = true;
+    } catch (error) {
+        console.error("Firebase initialization error:", error);
+        leaderboardInitialized = false;
+    }
+}
+
+// Initialize Firebase when the page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Delay the initialization slightly to ensure HTML modules are loaded
+    setTimeout(initializeFirebase, 500);
+});
+
+// Function to submit a score to the leaderboard
+async function submitScoreToLeaderboard(playerName, score, gameMode, ringCount) {
+    if (!leaderboardInitialized) {
+        console.error("Firebase not initialized, can't submit score");
+        return false;
+    }
+    
+    try {
+        const { collection, addDoc, serverTimestamp } = firestoreModules;
+        
+        await addDoc(collection(firestore, "leaderboard"), {
+            playerName: playerName,
+            score: score,
+            gameMode: gameMode,
+            ringCount: ringCount, // Add ring count to the leaderboard entry
+            timestamp: serverTimestamp()
+        });
+        
+        console.log("Score submitted to leaderboard");
+        return true;
+    } catch (error) {
+        console.error("Error submitting score:", error);
+        return false;
+    }
+}
+
+// Function to get top scores from the leaderboard
+async function getLeaderboardScores(gameMode, limit = 10, ringCount = null) {
+    if (!leaderboardInitialized) {
+        console.error("Firebase not initialized, can't get leaderboard");
+        return [];
+    }
+    
+    try {
+        const { collection, query, where, orderBy, limit: limitQuery, getDocs } = firestoreModules;
+        
+        let q;
+        
+        if (ringCount !== null) {
+            // If ringCount is specified, filter by both gameMode and ringCount
+            q = query(
+                collection(firestore, "leaderboard"),
+                where("gameMode", "==", gameMode),
+                where("ringCount", "==", ringCount),
+                orderBy("score", "desc"),
+                limitQuery(limit)
+            );
+        } else {
+            // Otherwise just filter by gameMode (backward compatibility)
+            q = query(
+                collection(firestore, "leaderboard"),
+                where("gameMode", "==", gameMode),
+                orderBy("score", "desc"),
+                limitQuery(limit)
+            );
+        }
+        
+        const querySnapshot = await getDocs(q);
+        
+        const scores = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            scores.push({
+                id: doc.id,
+                playerName: data.playerName,
+                score: data.score,
+                ringCount: data.ringCount || 0, // Handle older records without ringCount
+                timestamp: data.timestamp ? new Date(data.timestamp.toDate()) : new Date()
+            });
+        });
+        
+        return scores;
+    } catch (error) {
+        console.error("Error getting leaderboard scores:", error);
+        return [];
+    }
+}
+
 // Global variables
 let physicsWorld;
 let scene, camera, renderer, controls;
@@ -106,10 +258,18 @@ const PEG_DETECTION_DISTANCE = 0.5; // Distance to detect if a ring is on a peg
 const PEG_STABILITY_CHECK_INTERVAL = 1500; // Check if rings are on pegs every 500ms
 let isBubbleSoundPlaying = false; // Track if bubble sound is currently playing
 
-// Add these global variables near the top with the other globals
+// Add these global variables near the other globals
 let score = 0;
-let scoreElement;
 let highScore = 0;
+let points = 0; // New points variable for arcade mode
+let currentGameMode = 'zen'; // Track the current game mode
+let scoreElement;
+let pointsElement; // Element to display points in arcade mode
+
+// Arcade mode timer variables
+let arcadeTimerElement; // Element to display the countdown timer
+let arcadeTimeRemaining = 5 * 60; // 5 minutes in seconds
+let arcadeTimerInterval; // Interval ID for the countdown timer
 
 // Add a bubble containment box variable
 let bubbleContainmentBox = null;
@@ -271,7 +431,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const selectedLayout = pegLayoutSelect.value;
         localStorage.setItem('pegLayout', selectedLayout);
         
-        startDemo();
+        startDemo('zen');
     });
     
     document.getElementById('arcade-mode-button').addEventListener('click', function() {
@@ -283,7 +443,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const selectedLayout = pegLayoutSelect.value;
         localStorage.setItem('pegLayout', selectedLayout);
         
-        startDemo();
+        startDemo('arcade');
     });
     
     // Add an event listener for the radio preference checkbox
@@ -302,7 +462,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-function startDemo() {
+function startDemo(mode) {
+    // Store the game mode globally
+    currentGameMode = mode || localStorage.getItem('gameMode') || 'zen';
+    
     // Initialize graphics
     initGraphics();
     
@@ -354,6 +517,14 @@ function startDemo() {
     // Add this line to startDemo function or wherever appropriate
     // startDemo function or initGraphics - add after your other initializations
     initScoreElements();
+    
+    // Create the leaderboard button
+    createLeaderboardButton();
+    
+    // Start the arcade timer if in arcade mode
+    if (currentGameMode === 'arcade') {
+        startArcadeTimer();
+    }
 }
 
 // Initialize background music and radio
@@ -722,9 +893,38 @@ function setupBedroomFrame() {
     // Get the selected bedroom image from localStorage
     const bedroomImage = localStorage.getItem('selectedBedroom');
     
-    // Set the bedroom image
-    const bedroomImageElement = document.getElementById('bedroom-image');
-    bedroomImageElement.src = 'images/' + bedroomImage;
+    // Set the bedroom image with picture element for modern browsers
+    const bedroomImageContainer = document.getElementById('bedroom-image-container');
+    if (!bedroomImageContainer) {
+        console.error('Bedroom image container not found');
+        return;
+    }
+    
+    // Create picture element for better browser support
+    const pictureElement = document.createElement('picture');
+    
+    // Add WebP source
+    const webpSource = document.createElement('source');
+    webpSource.srcset = `images/optimized/${bedroomImage.replace('.png', '.webp')}`;
+    webpSource.type = 'image/webp';
+    pictureElement.appendChild(webpSource);
+    
+    // Add PNG source
+    const pngSource = document.createElement('source');
+    pngSource.srcset = `images/optimized/${bedroomImage.replace('.png', '-small.png')}`;
+    pngSource.type = 'image/png';
+    pictureElement.appendChild(pngSource);
+    
+    // Add fallback image
+    const imgElement = document.createElement('img');
+    imgElement.id = 'bedroom-image';
+    imgElement.src = `images/optimized/${bedroomImage.replace('.png', '-small.png')}`;
+    imgElement.alt = 'Character bedroom';
+    pictureElement.appendChild(imgElement);
+    
+    // Clear container and add picture element
+    bedroomImageContainer.innerHTML = '';
+    bedroomImageContainer.appendChild(pictureElement);
     
     // Show the bedroom frame
     document.getElementById('bedroom-frame').style.display = 'block';
@@ -834,6 +1034,46 @@ function initGraphics() {
     scoreElement.style.fontSize = '18px';
     scoreElement.textContent = 'Score: 0';
     document.body.appendChild(scoreElement);
+    
+    // Set up points display - only for arcade mode
+    pointsElement = document.createElement('div');
+    pointsElement.id = 'points';
+    pointsElement.style.position = 'absolute';
+    pointsElement.style.top = '85px'; // Position below the score element
+    pointsElement.style.left = '50%';
+    pointsElement.style.transform = 'translateX(-50%)';
+    pointsElement.style.background = 'rgba(0, 0, 0, 0.5)';
+    pointsElement.style.color = 'white';
+    pointsElement.style.padding = '5px';
+    pointsElement.style.borderRadius = '5px';
+    pointsElement.style.zIndex = '999999';
+    pointsElement.style.fontFamily = 'Arial, sans-serif';
+    pointsElement.style.fontSize = '18px';
+    pointsElement.textContent = 'Points: 0';
+    document.body.appendChild(pointsElement);
+    
+    // Set up arcade timer display - only for arcade mode
+    arcadeTimerElement = document.createElement('div');
+    arcadeTimerElement.id = 'arcade-timer';
+    arcadeTimerElement.style.position = 'absolute';
+    arcadeTimerElement.style.top = '120px'; // Position below the points element
+    arcadeTimerElement.style.left = '50%';
+    arcadeTimerElement.style.transform = 'translateX(-50%)';
+    arcadeTimerElement.style.background = 'rgba(0, 0, 0, 0.5)';
+    arcadeTimerElement.style.color = 'white';
+    arcadeTimerElement.style.padding = '5px';
+    arcadeTimerElement.style.borderRadius = '5px';
+    arcadeTimerElement.style.zIndex = '999999';
+    arcadeTimerElement.style.fontFamily = 'Arial, sans-serif';
+    arcadeTimerElement.style.fontSize = '18px';
+    arcadeTimerElement.textContent = 'Time: 5:00';
+    document.body.appendChild(arcadeTimerElement);
+    
+    // Hide points and timer display if not in arcade mode
+    if (currentGameMode !== 'arcade') {
+        pointsElement.style.display = 'none';
+        arcadeTimerElement.style.display = 'none';
+    }
     
     // Handle window resize
     window.addEventListener('resize', onWindowResize);
@@ -2956,6 +3196,19 @@ function dropRingsOnSlope() {
         updateScoreDisplay();
     }
     
+    // Reset points in arcade mode and update display
+    if (currentGameMode === 'arcade') {
+        points = 0;
+        if (typeof updatePointsDisplay === 'function') {
+            updatePointsDisplay();
+        }
+        
+        // Reset and restart the arcade timer
+        if (typeof startArcadeTimer === 'function') {
+            startArcadeTimer();
+        }
+    }
+    
     // Reset victory message shown flag
     window.victoryMessageShown = false;
 
@@ -2970,7 +3223,7 @@ function dropRingsOnSlope() {
             // Determine new position on slope
             const posX = (Math.random() * 14) - 7; // Random X position
             const posY = FLOOR_HEIGHT + (Math.random() * 4) + 10; // Random height above slope
-            const posZ = (Math.random() * 3) - 1.5; // Random Z position
+            const posZ = 0; // Random Z position
             
             if (body) {
                 const transform = new Ammo.btTransform();
@@ -3351,6 +3604,59 @@ function updateScore() {
             if (soundEnabled && coinGetSound) {
                 coinGetSound.play();
             }
+            
+            // Add points in arcade mode with time multiplier
+            if (currentGameMode === 'arcade') {
+                // Base points for landing a ring is 1000
+                const basePoints = 1000;
+                
+                // Calculate time multiplier: 1.0x to 3.0x based on remaining time
+                // Max time is 5 minutes (300 seconds)
+                const maxTime = 300;
+                const timeMultiplier = 1 + (arcadeTimeRemaining / maxTime) * 2;
+                
+                // Apply multiplier to base points
+                const pointsToAdd = Math.round(basePoints * timeMultiplier);
+                
+                // Add to total points
+                points += pointsToAdd;
+                
+                // Display the points earned with multiplier
+                const pointsEarnedElement = document.createElement('div');
+                pointsEarnedElement.textContent = `+${pointsToAdd} points! (${timeMultiplier.toFixed(1)}x)`;
+                pointsEarnedElement.style.position = 'absolute';
+                pointsEarnedElement.style.top = '50%';
+                pointsEarnedElement.style.left = '50%';
+                pointsEarnedElement.style.transform = 'translate(-50%, -50%)';
+                pointsEarnedElement.style.background = 'rgba(0, 255, 0, 0.3)';
+                pointsEarnedElement.style.color = '#00ff00';
+                pointsEarnedElement.style.padding = '10px 20px';
+                pointsEarnedElement.style.borderRadius = '10px';
+                pointsEarnedElement.style.fontFamily = 'Arial, sans-serif';
+                pointsEarnedElement.style.fontSize = '24px';
+                pointsEarnedElement.style.fontWeight = 'bold';
+                pointsEarnedElement.style.zIndex = '999998'; // Just below other UI elements
+                pointsEarnedElement.style.opacity = '0';
+                pointsEarnedElement.style.transition = 'opacity 0.3s, transform 0.5s';
+                document.body.appendChild(pointsEarnedElement);
+                
+                // Animate the points display
+                setTimeout(() => {
+                    pointsEarnedElement.style.opacity = '1';
+                    pointsEarnedElement.style.transform = 'translate(-50%, -50%) scale(1.1)';
+                }, 50);
+                
+                setTimeout(() => {
+                    pointsEarnedElement.style.opacity = '0';
+                }, 1000); // Reduced from 1500ms
+                
+                setTimeout(() => {
+                    document.body.removeChild(pointsEarnedElement);
+                }, 1300); // Reduced from 2000ms
+                
+                // Update the points display
+                updatePointsDisplay();
+            }
         }
     } else if (score < previousScore) {
         // Score decreased by 1
@@ -3360,6 +3666,51 @@ function updateScore() {
             // Play a negative sound if you have one
             if (soundEnabled && bubbleMissSound) {
                 bubbleMissSound.play();
+            }
+            
+            // Subtract points in arcade mode
+            if (currentGameMode === 'arcade') {
+                // Base points to subtract is 1000
+                const pointsToSubtract = 1000;
+                
+                // Subtract from total points, but don't go below 0
+                points = Math.max(0, points - pointsToSubtract);
+                
+                // Display the points lost
+                const pointsLostElement = document.createElement('div');
+                pointsLostElement.textContent = `-${pointsToSubtract} points!`;
+                pointsLostElement.style.position = 'absolute';
+                pointsLostElement.style.top = '50%';
+                pointsLostElement.style.left = '50%';
+                pointsLostElement.style.transform = 'translate(-50%, -50%)';
+                pointsLostElement.style.background = 'rgba(255, 0, 0, 0.3)';
+                pointsLostElement.style.color = '#ff5555';
+                pointsLostElement.style.padding = '10px 20px';
+                pointsLostElement.style.borderRadius = '10px';
+                pointsLostElement.style.fontFamily = 'Arial, sans-serif';
+                pointsLostElement.style.fontSize = '24px';
+                pointsLostElement.style.fontWeight = 'bold';
+                pointsLostElement.style.zIndex = '999998'; // Just below other UI elements
+                pointsLostElement.style.opacity = '0';
+                pointsLostElement.style.transition = 'opacity 0.3s, transform 0.5s';
+                document.body.appendChild(pointsLostElement);
+                
+                // Animate the points display
+                setTimeout(() => {
+                    pointsLostElement.style.opacity = '1';
+                    pointsLostElement.style.transform = 'translate(-50%, -50%) scale(1.1)';
+                }, 50);
+                
+                setTimeout(() => {
+                    pointsLostElement.style.opacity = '0';
+                }, 1000); // Reduced from 1500ms
+                
+                setTimeout(() => {
+                    document.body.removeChild(pointsLostElement);
+                }, 1300); // Reduced from 2000ms
+                
+                // Update the points display
+                updatePointsDisplay();
             }
         }
     }
@@ -3403,14 +3754,22 @@ function initScoreElements() {
     // Initialize high score to 0 for each session
     highScore = 0;
     
+    // Initialize points to 0 for arcade mode
+    points = 0;
+    
     // Update the score display to show both score and high score
     updateScoreDisplay();
+    
+    // Update points display if in arcade mode
+    if (currentGameMode === 'arcade') {
+        updatePointsDisplay();
+    }
 }
 
 // New function to update the combined score display
 function updateScoreDisplay() {
     if (scoreElement) {
-        scoreElement.innerHTML = `Score: <span style="color: white;">${score}</span> | High Score: <span style="color: yellow;">${highScore}</span>`;
+        scoreElement.innerHTML = `Score: <span style="color: white;">${score}</span> | Highest : <span style="color: yellow;">${highScore}</span>`;
     }
 }
 
@@ -3640,7 +3999,7 @@ function animate() {
 
 // Function to show fancy victory message and play fanfare when player wins
 function showVictoryMessage() {
-    // Create a victory container for the message
+    // Create a semi-transparent container for the victory message
     const victoryContainer = document.createElement('div');
     victoryContainer.id = 'victory-container';
     victoryContainer.style.position = 'absolute';
@@ -3653,43 +4012,74 @@ function showVictoryMessage() {
     victoryContainer.style.justifyContent = 'center';
     victoryContainer.style.alignItems = 'center';
     victoryContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-    victoryContainer.style.zIndex = '1000';
+    victoryContainer.style.zIndex = '100000';
     victoryContainer.style.opacity = '0';
-    victoryContainer.style.transition = 'opacity 1s ease-in-out';
-    document.body.appendChild(victoryContainer);
+    victoryContainer.style.transition = 'opacity 0.5s ease';
     
     // Create the main victory message
-    const victoryMessage = document.createElement('div');
-    victoryMessage.textContent = 'YOU WIN!';
-    victoryMessage.style.color = 'gold';
-    victoryMessage.style.fontSize = '5rem';
+    const victoryMessage = document.createElement('h2');
+    victoryMessage.textContent = 'PERFECT SCORE!';
+    victoryMessage.style.color = '#ffcc00';
+    victoryMessage.style.fontSize = '48px';
     victoryMessage.style.fontWeight = 'bold';
-    victoryMessage.style.textShadow = '0 0 20px rgba(255, 223, 0, 0.8)';
-    victoryMessage.style.marginBottom = '30px';
-    victoryMessage.style.fontFamily = 'Arial, sans-serif';
+    victoryMessage.style.textShadow = '0 0 15px rgba(255, 204, 0, 0.7)';
     victoryMessage.style.transform = 'scale(0.5)';
     victoryMessage.style.opacity = '0';
-    victoryMessage.style.transition = 'transform 1s ease-out, opacity 1s ease-out';
+    victoryMessage.style.transition = 'transform 0.5s ease, opacity 0.5s ease';
     victoryContainer.appendChild(victoryMessage);
     
     // Create the sub-message
-    const subMessage = document.createElement('div');
-    subMessage.textContent = 'Perfect Score! All Rings Placed!';
+    const subMessage = document.createElement('p');
+    subMessage.textContent = 'All rings successfully placed!';
+    
+    // Variables to track final score for leaderboard submission
+    let finalPoints = points;
+    let finalScore = score;
+    
+    // Add points information in arcade mode
+    if (currentGameMode === 'arcade') {
+        // Format time bonus
+        const minutes = Math.floor(arcadeTimeRemaining / 60);
+        const seconds = arcadeTimeRemaining % 60;
+        const formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Calculate time bonus - 10 points per second remaining
+        const timeBonus = arcadeTimeRemaining * 10;
+        
+        // Add to total points
+        points += timeBonus;
+        finalPoints = points;
+        
+        // Update the points display
+        updatePointsDisplay();
+        
+        subMessage.innerHTML = `All rings successfully placed!<br><br>
+            <span style="color: #ffcc00; font-size: 1.2em;">ARCADE MODE BONUS</span><br>
+            Time Remaining: ${formattedTime}<br>
+            Time Bonus: +${timeBonus} points<br>
+            <span style="color: #ffcc00; font-size: 1.5em; font-weight: bold;">Total Points: ${points}</span>`;
+    } else {
+        // Zen mode - just show the score
+        subMessage.innerHTML = `All rings successfully placed!<br><br>
+            <span style="color: #ffcc00; font-size: 1.2em;">ZEN MODE</span><br>
+            <span style="color: #ffcc00; font-size: 1.5em; font-weight: bold;">Final Score: ${score}</span>`;
+    }
+    
     subMessage.style.color = 'white';
-    subMessage.style.fontSize = '2rem';
-    subMessage.style.fontWeight = 'bold';
-    subMessage.style.textShadow = '0 0 10px rgba(255, 255, 255, 0.6)';
+    subMessage.style.fontSize = '24px';
+    subMessage.style.marginTop = '20px';
+    subMessage.style.textAlign = 'center';
     subMessage.style.opacity = '0';
     subMessage.style.transform = 'translateY(20px)';
-    subMessage.style.transition = 'opacity 1s ease-out 0.5s, transform 1s ease-out 0.5s';
+    subMessage.style.transition = 'opacity 0.5s ease 0.3s, transform 0.5s ease 0.3s';
     victoryContainer.appendChild(subMessage);
     
-    // Create a replay button
+    // Create the replay button
     const replayButton = document.createElement('button');
     replayButton.textContent = 'Play Again';
-    replayButton.style.marginTop = '40px';
-    replayButton.style.padding = '15px 30px';
-    replayButton.style.fontSize = '1.5rem';
+    replayButton.style.marginTop = '30px';
+    replayButton.style.padding = '10px 20px';
+    replayButton.style.fontSize = '18px';
     replayButton.style.fontWeight = 'bold';
     replayButton.style.backgroundColor = '#4facfe';
     replayButton.style.color = 'white';
@@ -3713,6 +4103,52 @@ function showVictoryMessage() {
     };
     victoryContainer.appendChild(replayButton);
     
+    // In arcade mode, add a leaderboard button
+    if (currentGameMode === 'arcade') {
+        const leaderboardButton = document.createElement('button');
+        leaderboardButton.textContent = '🏆 Submit Score';
+        leaderboardButton.style.marginTop = '15px';
+        leaderboardButton.style.padding = '10px 20px';
+        leaderboardButton.style.fontSize = '18px';
+        leaderboardButton.style.fontWeight = 'bold';
+        leaderboardButton.style.backgroundColor = '#ff758c';
+        leaderboardButton.style.color = 'white';
+        leaderboardButton.style.border = 'none';
+        leaderboardButton.style.borderRadius = '10px';
+        leaderboardButton.style.cursor = 'pointer';
+        leaderboardButton.style.boxShadow = '0 0 15px rgba(255, 117, 140, 0.7)';
+        leaderboardButton.style.opacity = '0';
+        leaderboardButton.style.transform = 'translateY(20px)';
+        leaderboardButton.style.transition = 'opacity 1s ease-out 1.2s, transform 1s ease-out 1.2s, background-color 0.3s';
+        leaderboardButton.onmouseover = function() {
+            this.style.backgroundColor = '#ff5c76';
+        };
+        leaderboardButton.onmouseout = function() {
+            this.style.backgroundColor = '#ff758c';
+        };
+        leaderboardButton.onclick = function() {
+            // Hide victory container temporarily
+            victoryContainer.style.display = 'none';
+            
+            // Show name prompt and submit score
+            promptForNameAndSubmitScore(finalPoints, 'arcade', totalRings);
+            
+            // Listen for when prompt is closed
+            const checkForPrompt = setInterval(() => {
+                const prompt = document.querySelector('div[style*="z-index: 1000001"]');
+                if (!prompt) {
+                    clearInterval(checkForPrompt);
+                    victoryContainer.style.display = 'flex';
+                }
+            }, 500);
+        };
+        victoryContainer.appendChild(leaderboardButton);
+    } else {
+        // Zen mode doesn't have a submit score button since there's no score to submit
+    }
+    
+    document.body.appendChild(victoryContainer);
+    
     // Animate in the container
     setTimeout(() => {
         victoryContainer.style.opacity = '1';
@@ -3734,6 +4170,17 @@ function showVictoryMessage() {
         replayButton.style.transform = 'translateY(0)';
     }, 1500);
     
+    // Make all leaderboard buttons visible
+    const leaderboardButtons = victoryContainer.querySelectorAll('button:not(:first-child)');
+    if (leaderboardButtons.length > 0) {
+        setTimeout(() => {
+            leaderboardButtons.forEach(button => {
+                button.style.opacity = '1';
+                button.style.transform = 'translateY(0)';
+            });
+        }, 1700);
+    }
+    
     // Play the victory fanfare
     if (soundEnabled && victoryFanfareSound) {
         victoryFanfareSound.currentTime = 0;
@@ -3742,3 +4189,676 @@ function showVictoryMessage() {
         });
     }
 }
+
+// Function to handle the end of an arcade mode game
+function handleArcadeGameOver() {
+    // Create a game over message
+    const gameOverContainer = document.createElement('div');
+    gameOverContainer.id = 'game-over-container';
+    gameOverContainer.style.position = 'absolute';
+    gameOverContainer.style.top = '0';
+    gameOverContainer.style.left = '0';
+    gameOverContainer.style.width = '100%';
+    gameOverContainer.style.height = '100%';
+    gameOverContainer.style.display = 'flex';
+    gameOverContainer.style.flexDirection = 'column';
+    gameOverContainer.style.justifyContent = 'center';
+    gameOverContainer.style.alignItems = 'center';
+    gameOverContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    gameOverContainer.style.zIndex = '1000000';
+    gameOverContainer.style.opacity = '0';
+    gameOverContainer.style.transition = 'opacity 0.5s ease';
+    
+    const gameOverMessage = document.createElement('h2');
+    gameOverMessage.textContent = 'TIME\'S UP!';
+    gameOverMessage.style.color = '#ff5555';
+    gameOverMessage.style.fontSize = '48px';
+    gameOverMessage.style.fontWeight = 'bold';
+    gameOverMessage.style.textShadow = '0 0 15px rgba(255, 85, 85, 0.7)';
+    gameOverMessage.style.transform = 'scale(0.5)';
+    gameOverMessage.style.opacity = '0';
+    gameOverMessage.style.transition = 'transform 0.5s ease, opacity 0.5s ease';
+    gameOverContainer.appendChild(gameOverMessage);
+    
+    const scoreMessage = document.createElement('p');
+    scoreMessage.textContent = `Final Score: ${score} | Points: ${points}`;
+    scoreMessage.style.color = 'white';
+    scoreMessage.style.fontSize = '24px';
+    scoreMessage.style.marginTop = '20px';
+    scoreMessage.style.opacity = '0';
+    scoreMessage.style.transform = 'translateY(20px)';
+    scoreMessage.style.transition = 'opacity 0.5s ease 0.3s, transform 0.5s ease 0.3s';
+    gameOverContainer.appendChild(scoreMessage);
+    
+    // Store final points for leaderboard
+    const finalPoints = points;
+    
+    // Add leaderboard button
+    const leaderboardButton = document.createElement('button');
+    leaderboardButton.textContent = '🏆 Submit Score';
+    leaderboardButton.style.marginTop = '30px';
+    leaderboardButton.style.padding = '10px 20px';
+    leaderboardButton.style.fontSize = '18px';
+    leaderboardButton.style.fontWeight = 'bold';
+    leaderboardButton.style.backgroundColor = '#ff5555';
+    leaderboardButton.style.color = 'white';
+    leaderboardButton.style.border = 'none';
+    leaderboardButton.style.borderRadius = '10px';
+    leaderboardButton.style.cursor = 'pointer';
+    leaderboardButton.style.boxShadow = '0 0 15px rgba(255, 85, 85, 0.7)';
+    leaderboardButton.style.opacity = '0';
+    leaderboardButton.style.transform = 'translateY(20px)';
+    leaderboardButton.style.transition = 'opacity 0.5s ease 0.6s, transform 0.5s ease 0.6s, background-color 0.3s';
+    leaderboardButton.onmouseover = function() {
+        this.style.backgroundColor = '#ff3333';
+    };
+    leaderboardButton.onmouseout = function() {
+        this.style.backgroundColor = '#ff5555';
+    };
+    leaderboardButton.onclick = function() {
+        // Hide game over container temporarily
+        gameOverContainer.style.display = 'none';
+        
+        // Show name prompt and submit score
+        promptForNameAndSubmitScore(finalPoints, 'arcade', totalRings);
+        
+        // Listen for when prompt is closed
+        const checkForPrompt = setInterval(() => {
+            const prompt = document.querySelector('div[style*="z-index: 1000001"]');
+            if (!prompt) {
+                clearInterval(checkForPrompt);
+                gameOverContainer.style.display = 'flex';
+            }
+        }, 500);
+    };
+    gameOverContainer.appendChild(leaderboardButton);
+    
+    const playAgainButton = document.createElement('button');
+    playAgainButton.textContent = 'Play Again';
+    playAgainButton.style.marginTop = '15px';
+    playAgainButton.style.padding = '10px 20px';
+    playAgainButton.style.fontSize = '18px';
+    playAgainButton.style.fontWeight = 'bold';
+    playAgainButton.style.backgroundColor = '#444';
+    playAgainButton.style.color = 'white';
+    playAgainButton.style.border = 'none';
+    playAgainButton.style.borderRadius = '10px';
+    playAgainButton.style.cursor = 'pointer';
+    playAgainButton.style.boxShadow = '0 0 15px rgba(68, 68, 68, 0.7)';
+    playAgainButton.style.opacity = '0';
+    playAgainButton.style.transform = 'translateY(20px)';
+    playAgainButton.style.transition = 'opacity 0.5s ease 0.8s, transform 0.5s ease 0.8s, background-color 0.3s';
+    playAgainButton.onmouseover = function() {
+        this.style.backgroundColor = '#555';
+    };
+    playAgainButton.onmouseout = function() {
+        this.style.backgroundColor = '#444';
+    };
+    playAgainButton.onclick = function() {
+        document.body.removeChild(gameOverContainer);
+        // Reset game and restart timer
+        dropRingsOnSlope();
+        startArcadeTimer();
+    };
+    gameOverContainer.appendChild(playAgainButton);
+    
+    document.body.appendChild(gameOverContainer);
+    
+    // Animate in the elements
+    setTimeout(() => {
+        gameOverContainer.style.opacity = '1';
+    }, 100);
+    
+    setTimeout(() => {
+        gameOverMessage.style.transform = 'scale(1)';
+        gameOverMessage.style.opacity = '1';
+    }, 500);
+    
+    setTimeout(() => {
+        scoreMessage.style.opacity = '1';
+        scoreMessage.style.transform = 'translateY(0)';
+    }, 800);
+    
+    setTimeout(() => {
+        leaderboardButton.style.opacity = '1';
+        leaderboardButton.style.transform = 'translateY(0)';
+    }, 1100);
+    
+    setTimeout(() => {
+        playAgainButton.style.opacity = '1';
+        playAgainButton.style.transform = 'translateY(0)';
+    }, 1300);
+}
+
+// Function to create the leaderboard button
+function createLeaderboardButton() {
+    const leaderboardButton = document.createElement('button');
+    leaderboardButton.id = 'leaderboard-button';
+    leaderboardButton.textContent = '🏆';
+    leaderboardButton.style.position = 'absolute';
+    leaderboardButton.style.top = '10px';
+    leaderboardButton.style.right = '10px';
+    leaderboardButton.style.padding = '8px 15px';
+    leaderboardButton.style.backgroundColor = '#4facfe';
+    leaderboardButton.style.color = 'white';
+    leaderboardButton.style.border = 'none';
+    leaderboardButton.style.borderRadius = '5px';
+    leaderboardButton.style.cursor = 'pointer';
+    leaderboardButton.style.fontFamily = 'Arial, sans-serif';
+    leaderboardButton.style.fontSize = '16px';
+    leaderboardButton.style.fontWeight = 'bold';
+    leaderboardButton.style.zIndex = '999999';
+    leaderboardButton.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.2)';
+    
+    leaderboardButton.addEventListener('click', showLeaderboard);
+    
+    document.body.appendChild(leaderboardButton);
+}
+
+// Function to create and show the leaderboard modal
+async function showLeaderboard() {
+    // Create modal container
+    const modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.top = '0';
+    modal.style.left = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+    modal.style.display = 'flex';
+    modal.style.justifyContent = 'center';
+    modal.style.alignItems = 'center';
+    modal.style.zIndex = '1000';
+    
+    // Create content container
+    const modalContent = document.createElement('div');
+    modalContent.style.position = 'relative';
+    modalContent.style.backgroundColor = '#333';
+    modalContent.style.borderRadius = '15px';
+    modalContent.style.padding = '30px';
+    modalContent.style.width = '80%';
+    modalContent.style.maxWidth = '600px';
+    modalContent.style.maxHeight = '80%';
+    modalContent.style.overflow = 'auto';
+    modalContent.style.boxShadow = '0 0 20px rgba(0, 0, 0, 0.5)';
+    
+    // Add title
+    const title = document.createElement('h2');
+    title.textContent = 'Leaderboard';
+    title.style.color = 'white';
+    title.style.marginTop = '0';
+    title.style.textAlign = 'center';
+    title.style.marginBottom = '20px';
+    title.style.fontFamily = 'Arial, sans-serif';
+    modalContent.appendChild(title);
+    
+    // Create tabs for different game modes
+    const tabContainer = document.createElement('div');
+    tabContainer.style.display = 'flex';
+    tabContainer.style.justifyContent = 'center';
+    tabContainer.style.marginBottom = '20px';
+    
+    const arcadeTab = document.createElement('button');
+    arcadeTab.textContent = 'Arcade Mode';
+    arcadeTab.dataset.mode = 'arcade';
+    arcadeTab.className = 'leaderboard-tab';
+    arcadeTab.style.padding = '8px 15px';
+    arcadeTab.style.margin = '0 5px';
+    arcadeTab.style.backgroundColor = '#ff758c';
+    arcadeTab.style.color = 'white';
+    arcadeTab.style.border = 'none';
+    arcadeTab.style.borderRadius = '5px';
+    arcadeTab.style.cursor = 'pointer';
+    
+    const zenTab = document.createElement('button');
+    zenTab.textContent = 'Zen Mode';
+    zenTab.dataset.mode = 'zen';
+    zenTab.className = 'leaderboard-tab';
+    zenTab.style.padding = '8px 15px';
+    zenTab.style.margin = '0 5px';
+    zenTab.style.backgroundColor = '#4facfe';
+    zenTab.style.color = 'white';
+    zenTab.style.border = 'none';
+    zenTab.style.borderRadius = '5px';
+    zenTab.style.cursor = 'pointer';
+    
+    tabContainer.appendChild(arcadeTab);
+    tabContainer.appendChild(zenTab);
+    modalContent.appendChild(tabContainer);
+    
+    // Create ring count filter
+    const filterContainer = document.createElement('div');
+    filterContainer.style.display = 'flex';
+    filterContainer.style.justifyContent = 'center';
+    filterContainer.style.marginBottom = '20px';
+    filterContainer.style.flexWrap = 'wrap';
+    
+    // Label for the filter
+    const filterLabel = document.createElement('div');
+    filterLabel.textContent = 'Filter by rings: ';
+    filterLabel.style.color = 'white';
+    filterLabel.style.marginRight = '10px';
+    filterLabel.style.display = 'flex';
+    filterLabel.style.alignItems = 'center';
+    filterContainer.appendChild(filterLabel);
+    
+    // Create buttons for each ring count
+    const ringCounts = [5, 10, 20];
+    const ringFilterButtons = {};
+    
+    // Add specific ring count buttons
+    for (const count of ringCounts) {
+        const button = document.createElement('button');
+        button.textContent = count + '';
+        button.dataset.rings = count;
+        button.className = 'ring-filter-button';
+        if (count === 5) {
+            button.className = 'ring-filter-button active';
+        }
+        button.style.padding = '5px 10px';
+        button.style.margin = '0 5px';
+        button.style.backgroundColor = '#666';
+        button.style.color = 'white';
+        button.style.border = 'none';
+        button.style.borderRadius = '5px';
+        button.style.cursor = 'pointer';
+        filterContainer.appendChild(button);
+        ringFilterButtons[count] = button;
+    }
+    
+    modalContent.appendChild(filterContainer);
+    
+    // Create scores container
+    const scoresContainer = document.createElement('div');
+    scoresContainer.id = 'leaderboard-scores';
+    scoresContainer.style.overflowY = 'auto';
+    scoresContainer.style.maxHeight = '400px';
+    modalContent.appendChild(scoresContainer);
+    
+    // Create close button
+    const closeButton = document.createElement('button');
+    closeButton.textContent = '×';
+    closeButton.style.position = 'absolute';
+    closeButton.style.top = '10px';
+    closeButton.style.right = '10px';
+    closeButton.style.backgroundColor = 'transparent';
+    closeButton.style.color = 'white';
+    closeButton.style.border = 'none';
+    closeButton.style.fontSize = '24px';
+    closeButton.style.cursor = 'pointer';
+    closeButton.style.padding = '0 10px';
+    closeButton.addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
+    modalContent.appendChild(closeButton);
+    
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+    
+    // Track current selections
+    let currentMode = 'arcade';
+    let currentRingCount = 5; // Default to 5 rings instead of null (all rings)
+    
+    // Function to update button styles
+    function updateRingFilterButtonStyles() {
+        // Reset all buttons
+        Object.values(ringFilterButtons).forEach(btn => {
+            btn.style.backgroundColor = '#666';
+            btn.style.transform = 'scale(1)';
+            btn.classList.remove('active');
+        });
+        
+        // Highlight active button
+        const activeButton = ringFilterButtons[currentRingCount];
+            
+        if (activeButton) {
+            activeButton.style.backgroundColor = currentMode === 'arcade' ? '#ff758c' : '#4facfe';
+            activeButton.style.transform = 'scale(1.05)';
+            activeButton.classList.add('active');
+        }
+    }
+    
+    // Add tab click handlers
+    const tabs = document.querySelectorAll('.leaderboard-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', async function() {
+            // Highlight active tab
+            tabs.forEach(t => {
+                t.style.opacity = '0.7';
+                t.style.transform = 'scale(1)';
+            });
+            this.style.opacity = '1';
+            this.style.transform = 'scale(1.05)';
+            
+            // Update current mode
+            currentMode = this.dataset.mode;
+            
+            // Update ring filter button styles
+            updateRingFilterButtonStyles();
+            
+            // Load scores for selected mode
+            await loadLeaderboardScores(currentMode, 20, currentRingCount);
+        });
+    });
+    
+    // Add ring filter button click handlers
+    Object.entries(ringFilterButtons).forEach(([count, button]) => {
+        button.addEventListener('click', async function() {
+            // Update current ring count
+            currentRingCount = parseInt(count);
+            
+            // Update button styles
+            updateRingFilterButtonStyles();
+            
+            // Load filtered scores
+            await loadLeaderboardScores(currentMode, 20, currentRingCount);
+        });
+    });
+    
+    // Default to arcade mode scores with 5 rings
+    arcadeTab.click();
+}
+
+// Function to load scores into the leaderboard
+async function loadLeaderboardScores(gameMode, limit = 20, ringCount = null) {
+    const scoresContainer = document.getElementById('leaderboard-scores');
+    scoresContainer.innerHTML = '<div style="text-align: center; color: white; padding: 20px;">Loading scores...</div>';
+    
+    try {
+        const scores = await getLeaderboardScores(gameMode, limit, ringCount);
+        
+        if (scores.length === 0) {
+            scoresContainer.innerHTML = '<div style="text-align: center; color: white; padding: 20px;">No scores yet. Be the first to submit your score!</div>';
+            return;
+        }
+        
+        // Create table for scores
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        table.style.color = 'white';
+        
+        // Add table header
+        const thead = document.createElement('thead');
+        thead.innerHTML = `
+            <tr>
+                <th style="padding: 10px; text-align: center; border-bottom: 1px solid #444; width: 50px;">#</th>
+                <th style="padding: 10px; text-align: left; border-bottom: 1px solid #444;">Player</th>
+                <th style="padding: 10px; text-align: right; border-bottom: 1px solid #444;">Score</th>
+                <th style="padding: 10px; text-align: center; border-bottom: 1px solid #444;">Rings</th>
+                <th style="padding: 10px; text-align: right; border-bottom: 1px solid #444;">Date</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+        
+        // Add table body with scores
+        const tbody = document.createElement('tbody');
+        scores.forEach((score, index) => {
+            const row = document.createElement('tr');
+            
+            // Highlight current player's score if we have it stored
+            const isCurrentPlayer = score.playerName === localStorage.getItem('playerName');
+            
+            if (isCurrentPlayer) {
+                row.style.backgroundColor = 'rgba(255, 204, 0, 0.2)';
+                row.style.fontWeight = 'bold';
+            }
+            
+            // Format date
+            const date = new Date(score.timestamp);
+            const formattedDate = `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+            
+            row.innerHTML = `
+                <td style="padding: 8px; text-align: center; border-bottom: 1px solid #333;">${index + 1}</td>
+                <td style="padding: 8px; text-align: left; border-bottom: 1px solid #333;">${score.playerName}</td>
+                <td style="padding: 8px; text-align: right; border-bottom: 1px solid #333;">${score.score.toLocaleString()}</td>
+                <td style="padding: 8px; text-align: center; border-bottom: 1px solid #333;">${score.ringCount || '-'}</td>
+                <td style="padding: 8px; text-align: right; border-bottom: 1px solid #333;">${formattedDate}</td>
+            `;
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        
+        // Clear and add the table
+        scoresContainer.innerHTML = '';
+        scoresContainer.appendChild(table);
+        
+    } catch (error) {
+        console.error("Error loading leaderboard scores:", error);
+        scoresContainer.innerHTML = '<div style="text-align: center; color: white; padding: 20px;">Error loading scores. Please try again later.</div>';
+    }
+}
+
+// Function to prompt user for their name and submit score
+function promptForNameAndSubmitScore(score, gameMode, ringCount) {
+    // Create the modal container
+    const modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.top = '0';
+    modal.style.left = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+    modal.style.display = 'flex';
+    modal.style.justifyContent = 'center';
+    modal.style.alignItems = 'center';
+    modal.style.zIndex = '1000001'; // Higher than other modals
+    
+    // Create the modal content
+    const content = document.createElement('div');
+    content.style.backgroundColor = 'rgba(30, 30, 30, 0.95)';
+    content.style.borderRadius = '10px';
+    content.style.padding = '30px';
+    content.style.width = '80%';
+    content.style.maxWidth = '400px';
+    content.style.textAlign = 'center';
+    content.style.boxShadow = '0 0 20px rgba(255, 204, 0, 0.3)';
+    
+    // Create the title
+    const title = document.createElement('h2');
+    title.textContent = 'Submit Your Score';
+    title.style.color = '#ffcc00';
+    title.style.marginBottom = '20px';
+    title.style.fontSize = '24px';
+    content.appendChild(title);
+    
+    // Create score display
+    const scoreDisplay = document.createElement('p');
+    scoreDisplay.textContent = `Your Score: ${score}`;
+    scoreDisplay.style.color = 'white';
+    scoreDisplay.style.fontSize = '20px';
+    scoreDisplay.style.marginBottom = '20px';
+    content.appendChild(scoreDisplay);
+    
+    // Create name input
+    const inputLabel = document.createElement('label');
+    inputLabel.textContent = 'Enter your name:';
+    inputLabel.style.color = 'white';
+    inputLabel.style.display = 'block';
+    inputLabel.style.marginBottom = '10px';
+    inputLabel.style.textAlign = 'left';
+    content.appendChild(inputLabel);
+    
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 20;
+    input.style.width = '100%';
+    input.style.padding = '10px';
+    input.style.marginBottom = '20px';
+    input.style.backgroundColor = '#222';
+    input.style.border = '1px solid #444';
+    input.style.borderRadius = '5px';
+    input.style.color = 'white';
+    input.style.fontSize = '16px';
+    
+    // Try to get saved name from localStorage
+    const savedName = localStorage.getItem('playerName');
+    if (savedName) {
+        input.value = savedName;
+    }
+    
+    content.appendChild(input);
+    
+    // Create buttons container
+    const buttonsContainer = document.createElement('div');
+    buttonsContainer.style.display = 'flex';
+    buttonsContainer.style.justifyContent = 'space-between';
+    
+    // Create skip button
+    const skipButton = document.createElement('button');
+    skipButton.textContent = 'Skip';
+    skipButton.style.padding = '10px 20px';
+    skipButton.style.backgroundColor = '#444';
+    skipButton.style.color = 'white';
+    skipButton.style.border = 'none';
+    skipButton.style.borderRadius = '5px';
+    skipButton.style.cursor = 'pointer';
+    skipButton.style.fontSize = '16px';
+    skipButton.addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
+    buttonsContainer.appendChild(skipButton);
+    
+    // Create submit button
+    const submitButton = document.createElement('button');
+    submitButton.textContent = 'Submit';
+    submitButton.style.padding = '10px 20px';
+    submitButton.style.backgroundColor = '#4facfe';
+    submitButton.style.color = 'white';
+    submitButton.style.border = 'none';
+    submitButton.style.borderRadius = '5px';
+    submitButton.style.cursor = 'pointer';
+    submitButton.style.fontSize = '16px';
+    submitButton.addEventListener('click', async () => {
+        const playerName = input.value.trim();
+        if (playerName) {
+            // Save name for future use
+            localStorage.setItem('playerName', playerName);
+            
+            // Submit score to leaderboard
+            const success = await submitScoreToLeaderboard(playerName, score, gameMode, ringCount);
+            
+            // Remove the modal
+            document.body.removeChild(modal);
+            
+            // Show confirmation
+            if (success) {
+                showConfirmationMessage('Score submitted successfully!');
+            } else {
+                showConfirmationMessage('Failed to submit score. Please try again later.', false);
+            }
+        }
+    });
+    buttonsContainer.appendChild(submitButton);
+    
+    content.appendChild(buttonsContainer);
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+    
+    // Focus the input field
+    setTimeout(() => {
+        input.focus();
+    }, 100);
+    
+    // Allow Enter key to submit
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            submitButton.click();
+        }
+    });
+}
+
+// Function to show a temporary confirmation message
+function showConfirmationMessage(message, isSuccess = true) {
+    const confirmation = document.createElement('div');
+    confirmation.textContent = message;
+    confirmation.style.position = 'fixed';
+    confirmation.style.bottom = '20px';
+    confirmation.style.left = '50%';
+    confirmation.style.transform = 'translateX(-50%)';
+    confirmation.style.padding = '12px 20px';
+    confirmation.style.borderRadius = '5px';
+    confirmation.style.backgroundColor = isSuccess ? 'rgba(40, 167, 69, 0.9)' : 'rgba(220, 53, 69, 0.9)';
+    confirmation.style.color = 'white';
+    confirmation.style.fontWeight = 'bold';
+    confirmation.style.zIndex = '1000002';
+    confirmation.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.2)';
+    confirmation.style.opacity = '0';
+    confirmation.style.transition = 'opacity 0.3s';
+    
+    document.body.appendChild(confirmation);
+    
+    // Fade in
+    setTimeout(() => {
+        confirmation.style.opacity = '1';
+    }, 10);
+    
+    // Fade out and remove
+    setTimeout(() => {
+        confirmation.style.opacity = '0';
+        setTimeout(() => {
+            document.body.removeChild(confirmation);
+        }, 300);
+    }, 3000);
+}
+
+// New function to update the points display
+function updatePointsDisplay() {
+    if (pointsElement && currentGameMode === 'arcade') {
+        pointsElement.textContent = `Points: ${points}`;
+    }
+}
+
+// Format and update the arcade timer display
+function updateArcadeTimerDisplay() {
+    if (arcadeTimerElement && currentGameMode === 'arcade') {
+        // Format the time as MM:SS
+        const minutes = Math.floor(arcadeTimeRemaining / 60);
+        const seconds = arcadeTimeRemaining % 60;
+        const formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Update the display
+        arcadeTimerElement.textContent = `Time: ${formattedTime}`;
+        
+        // Make the timer red when less than 1 minute remains
+        if (arcadeTimeRemaining < 60) {
+            arcadeTimerElement.style.color = '#ff5555';
+        } else {
+            arcadeTimerElement.style.color = 'white';
+        }
+    }
+}
+
+// Function to start the arcade timer countdown
+function startArcadeTimer() {
+    // Clear any existing timer intervals
+    if (arcadeTimerInterval) {
+        clearInterval(arcadeTimerInterval);
+    }
+    
+    // Reset the timer to 5 minutes
+    arcadeTimeRemaining = 5 * 60;
+    
+    // Update the display immediately
+    updateArcadeTimerDisplay();
+    
+    // Set up the interval to count down each second
+    arcadeTimerInterval = setInterval(() => {
+        // Decrease the time remaining
+        arcadeTimeRemaining--;
+        
+        // Update the display
+        updateArcadeTimerDisplay();
+        
+        // Check if time is up
+        if (arcadeTimeRemaining <= 0) {
+            // Stop the timer
+            clearInterval(arcadeTimerInterval);
+            
+            // Handle game over
+            handleArcadeGameOver();
+        }
+    }, 1000);
+}
+
+// Function to handle the end of an arcade mode game
